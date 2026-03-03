@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>DictateAI</string>
+    <key>CFBundleDisplayName</key>
+    <string>DictateAI</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>DictateAI needs microphone access to capture your voice for transcription.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>DictateAI needs Accessibility access to paste transcribed text into the active application.</string>
+</dict>
+</plist>

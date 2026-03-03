@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: dictateai-downloads
+    runtime: static
+    plan: free
+    rootDir: download-site
+    buildCommand: echo "Static download site ready"
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=300
+      - path: /downloads/*
+        name: Cache-Control
+        value: public, max-age=3600
+    routes:
+      - type: redirect
+        source: /download
+        destination: /downloads/DictateAI-latest-aarch64.dmg

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DictateAI for macOS</title>
+    <meta
+      name="description"
+      content="Download DictateAI for macOS. A fast hotkey-driven speech capture app for instant transcription and paste."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <img class="brand-icon" src="./assets/icon.png" alt="DictateAI icon" />
+          <div>
+            <p class="eyebrow">macOS desktop app</p>
+            <h1>DictateAI</h1>
+          </div>
+        </div>
+        <a class="ghost-link" href="#install">Install notes</a>
+      </header>
+
+      <main>
+        <section class="hero-panel">
+          <div class="hero-copy">
+            <p class="version-pill">Version 1.0.5</p>
+            <h2>Your voice, perfectly written.</h2>
+            <p class="hero-text">
+              DictateAI is a low-friction macOS app for hotkey-driven speech capture.
+              It transcribes quickly, optionally rewrites lightly, and pastes directly
+              into the app you are already using.
+            </p>
+
+            <div class="cta-row">
+              <a
+                class="primary-link"
+                href="./downloads/DictateAI-latest-aarch64.dmg"
+                download="DictateAI-latest-aarch64.dmg"
+              >
+                Download for Apple Silicon
+              </a>
+              <span class="meta-chip">12 MB DMG</span>
+              <span class="meta-chip">M-series Macs</span>
+            </div>
+
+            <p class="support-note">
+              Current release target: macOS on Apple Silicon (M1, M2, M3, M4).
+            </p>
+          </div>
+        </section>
+
+        <section class="feature-grid">
+          <article class="info-card" id="install">
+            <p class="section-label">Set up instructions</p>
+            <ol>
+              <li>Download the DMG and drag DictateAI into Applications.</li>
+              <li>Allow Microphone access.</li>
+              <li>Allow Accessibility access (to enable auto-paste).</li>
+            </ol>
+          </article>
+
+          <article class="info-card">
+            <p class="section-label">How to use</p>
+            <ol>
+              <li>Press and hold the hotkey (e.g. Command+A).</li>
+              <li>Speak.</li>
+              <li>Release.</li>
+            </ol>
+          </article>
+
+          <article class="info-card">
+            <p class="section-label">Important note</p>
+            <p>
+              This is a direct macOS build. It is not notarized yet, so macOS may
+              show a security warning on first launch.
+            </p>
+            <details>
+              <summary>If macOS blocks opening the app</summary>
+              <p>
+                Move the app to Applications first, then right-click it and choose
+                <strong>Open</strong>. If Gatekeeper still blocks it, run:
+              </p>
+              <pre><code>xattr -dr com.apple.quarantine /Applications/DictateAI.app</code></pre>
+            </details>
+          </article>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Hosted as a static download page on Render.</p>
+        <a
+          class="footer-link"
+          href="./downloads/DictateAI-latest-aarch64.dmg"
+          download="DictateAI-latest-aarch64.dmg"
+        >
+          Direct DMG link
+        </a>
+      </footer>
+    </div>
+  </body>
+</html>
