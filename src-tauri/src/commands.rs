@@ -187,6 +187,11 @@ pub fn get_on_device_status(app: AppHandle) -> Result<crate::on_device::OnDevice
 }
 
 #[tauri::command]
+pub fn is_on_device_supported() -> bool {
+    crate::on_device::is_supported()
+}
+
+#[tauri::command]
 pub async fn download_on_device_models(
     app: AppHandle,
 ) -> Result<crate::on_device::OnDeviceStatus, String> {

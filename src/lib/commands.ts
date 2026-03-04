@@ -80,6 +80,9 @@ export const cancelProcessing = () =>
 export const getOnDeviceStatus = () =>
   invoke<OnDeviceStatus>("get_on_device_status");
 
+export const isOnDeviceSupported = () =>
+  invoke<boolean>("is_on_device_supported");
+
 export const downloadOnDeviceModels = () =>
   invoke<OnDeviceStatus>("download_on_device_models");
 

@@ -4,6 +4,7 @@ import ApiKeySettings from "./ApiKeySettings";
 import PromptSettings from "./PromptSettings";
 import {
   downloadOnDeviceModels,
+  isOnDeviceSupported,
   getOnDeviceStatus,
   getSetting,
   removeOnDeviceModels,
@@ -19,20 +20,30 @@ export default function RewriteSettings() {
   const copy = getSetupCopy(language);
   const [mode, setMode] = useState<ModelMode>("api");
   const [status, setStatus] = useState<OnDeviceStatus | null>(null);
+  const [onDeviceSupported, setOnDeviceSupported] = useState(true);
   const [loading, setLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
   useEffect(() => {
     const load = async () => {
-      const [storedMode, onDeviceStatus] = await Promise.all([
+      const [storedMode, onDeviceStatus, supportsOnDevice] = await Promise.all([
         getSetting("model_mode").catch(() => "api"),
         getOnDeviceStatus().catch(() => null),
+        isOnDeviceSupported().catch(() => true),
       ]);
 
-      setMode(storedMode === "on-device" ? "on-device" : "api");
+      const nextMode =
+        supportsOnDevice && storedMode === "on-device" ? "on-device" : "api";
+
+      setMode(nextMode);
       setStatus(onDeviceStatus);
+      setOnDeviceSupported(supportsOnDevice);
       setLoading(false);
+
+      if (!supportsOnDevice && storedMode === "on-device") {
+        await saveSetting("model_mode", "api").catch(() => undefined);
+      }
     };
 
     void load();
@@ -101,27 +112,40 @@ export default function RewriteSettings() {
             </div>
           </label>
 
-          <label className={optionClass(mode === "on-device")}>
-            <input
-              type="radio"
-              name="model-mode"
-              checked={mode === "on-device"}
-              onChange={() => void selectMode("on-device")}
-              className="sr-only"
-            />
-            <span className={radioIndicatorClass(mode === "on-device")} aria-hidden="true">
+          <div className={optionClass(mode === "on-device", !onDeviceSupported)}>
+            {onDeviceSupported ? (
+              <input
+                type="radio"
+                name="model-mode"
+                checked={mode === "on-device"}
+                onChange={() => void selectMode("on-device")}
+                className="sr-only"
+              />
+            ) : null}
+            <span
+              className={radioIndicatorClass(mode === "on-device", !onDeviceSupported)}
+              aria-hidden="true"
+            >
               <span className={radioDotClass(mode === "on-device")} />
             </span>
             <div className="space-y-1">
               <div className="text-sm font-semibold text-white">{copy.onDeviceTitle}</div>
-              <div className="text-xs text-neutral-400">{copy.onDeviceSpeech}</div>
-              <div className="text-xs text-neutral-400">{copy.onDeviceRewrite}</div>
-              <div className="text-xs text-neutral-400">{copy.onDeviceLatency}</div>
+              {onDeviceSupported ? (
+                <>
+                  <div className="text-xs text-neutral-400">{copy.onDeviceSpeech}</div>
+                  <div className="text-xs text-neutral-400">{copy.onDeviceRewrite}</div>
+                  <div className="text-xs text-neutral-400">{copy.onDeviceLatency}</div>
+                </>
+              ) : (
+                <div className="text-xs font-medium text-neutral-500">
+                  {copy.onDeviceComingSoon}
+                </div>
+              )}
             </div>
-          </label>
+          </div>
         </div>
 
-        {mode === "on-device" ? (
+        {mode === "on-device" && onDeviceSupported ? (
           <section className="pt-1">
             <div className="space-y-2">
               {!status?.modelsDownloaded && (
@@ -167,21 +191,26 @@ export default function RewriteSettings() {
   );
 }
 
-function optionClass(selected: boolean) {
+function optionClass(selected: boolean, disabled = false) {
   return [
-    "flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition overflow-visible",
+    "flex items-start gap-3 rounded-2xl border p-4 transition overflow-visible",
+    disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
     selected
       ? "border-neutral-500 bg-neutral-900 text-white"
-      : "border-neutral-800 bg-neutral-950/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-900/80",
+      : disabled
+        ? "border-neutral-800 bg-neutral-950/50 text-neutral-300"
+        : "border-neutral-800 bg-neutral-950/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-900/80",
   ].join(" ");
 }
 
-function radioIndicatorClass(selected: boolean) {
+function radioIndicatorClass(selected: boolean, disabled = false) {
   return [
     "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition",
     selected
       ? "border-white bg-white/10 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]"
-      : "border-neutral-500 bg-transparent",
+      : disabled
+        ? "border-neutral-700 bg-transparent"
+        : "border-neutral-500 bg-transparent",
   ].join(" ");
 }
 
@@ -203,6 +232,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "Rewriting model: gemini-2.5-flash-lite",
       apiLatency: "E2E latency: ~2.9s",
       onDeviceTitle: "On-Device",
+      onDeviceComingSoon: "Coming soon",
       onDeviceSpeech: "Speech model: whisper.cpp base",
       onDeviceRewrite: "Rewriting model: TinyLlama 1.1B",
       onDeviceLatency: "E2E latency: ~4.1s",
@@ -225,6 +255,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "Omskrivningsmodell: gemini-2.5-flash-lite",
       apiLatency: "E2E-latens: ~2.9s",
       onDeviceTitle: "På Enheten",
+      onDeviceComingSoon: "Kommer snart",
       onDeviceSpeech: "Talmodell: whisper.cpp base",
       onDeviceRewrite: "Omskrivningsmodell: TinyLlama 1.1B",
       onDeviceLatency: "E2E-latens: ~4.1s",
@@ -247,6 +278,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "Uudelleenkirjoitusmalli: gemini-2.5-flash-lite",
       apiLatency: "E2E-viive: ~2.9s",
       onDeviceTitle: "Laitteessa",
+      onDeviceComingSoon: "Tulossa pian",
       onDeviceSpeech: "Puhemalli: whisper.cpp base",
       onDeviceRewrite: "Uudelleenkirjoitusmalli: TinyLlama 1.1B",
       onDeviceLatency: "E2E-viive: ~4.1s",
@@ -269,6 +301,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "Modelo de Reescritura: gemini-2.5-flash-lite",
       apiLatency: "Latencia E2E: ~2.9s",
       onDeviceTitle: "En el Dispositivo",
+      onDeviceComingSoon: "Proximamente",
       onDeviceSpeech: "Modelo de Voz: whisper.cpp base",
       onDeviceRewrite: "Modelo de Reescritura: TinyLlama 1.1B",
       onDeviceLatency: "Latencia E2E: ~4.1s",
@@ -291,6 +324,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "Modèle de Réécriture : gemini-2.5-flash-lite",
       apiLatency: "Latence E2E : ~2.9s",
       onDeviceTitle: "Sur l'Appareil",
+      onDeviceComingSoon: "Bientot disponible",
       onDeviceSpeech: "Modèle Vocal : whisper.cpp base",
       onDeviceRewrite: "Modèle de Réécriture : TinyLlama 1.1B",
       onDeviceLatency: "Latence E2E : ~4.1s",
@@ -313,6 +347,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "Umschreibmodell: gemini-2.5-flash-lite",
       apiLatency: "E2E-Latenz: ~2.9s",
       onDeviceTitle: "Auf dem Gerät",
+      onDeviceComingSoon: "Demnächst",
       onDeviceSpeech: "Sprachmodell: whisper.cpp base",
       onDeviceRewrite: "Umschreibmodell: TinyLlama 1.1B",
       onDeviceLatency: "E2E-Latenz: ~4.1s",
@@ -335,6 +370,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "書き換えモデル: gemini-2.5-flash-lite",
       apiLatency: "E2Eレイテンシー: ~2.9s",
       onDeviceTitle: "オンデバイス",
+      onDeviceComingSoon: "近日公開",
       onDeviceSpeech: "音声モデル: whisper.cpp base",
       onDeviceRewrite: "書き換えモデル: TinyLlama 1.1B",
       onDeviceLatency: "E2Eレイテンシー: ~4.1s",
@@ -357,6 +393,7 @@ function getSetupCopy(language: string) {
       apiRewrite: "改写模型：gemini-2.5-flash-lite",
       apiLatency: "端到端延迟：~2.9s",
       onDeviceTitle: "本地设备",
+      onDeviceComingSoon: "即将推出",
       onDeviceSpeech: "语音模型：whisper.cpp base",
       onDeviceRewrite: "改写模型：TinyLlama 1.1B",
       onDeviceLatency: "端到端延迟：~4.1s",

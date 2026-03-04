@@ -156,6 +156,7 @@ pub fn run() {
             commands::get_app_state,
             commands::cancel_processing,
             commands::get_on_device_status,
+            commands::is_on_device_supported,
             commands::download_on_device_models,
             commands::remove_on_device_models,
             commands::check_accessibility,

@@ -47,10 +47,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "binaries/llama-cli"
-    ],
     "resources": {
+      "binaries/llama-cli-aarch64-apple-darwin": "sidecars/llama-cli",
       "resources/llama-lib/": "llama-lib/"
     },
     "icon": [

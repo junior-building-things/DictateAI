@@ -15,6 +15,7 @@ const LLAMA_MODEL_URL: &str =
     "https://huggingface.co/osanseviero/TinyLlama-1.1B-Chat-v1.0-Q4_K_M-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
 const WHISPER_MODEL_FILE: &str = "ggml-base.bin";
 const LLAMA_MODEL_FILE: &str = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
+const UNSUPPORTED_BUILD_MESSAGE: &str = "On-device mode is not supported on this build yet.";
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +27,30 @@ pub struct OnDeviceStatus {
     pub llama_runtime_available: bool,
 }
 
+pub fn is_supported() -> bool {
+    if cfg!(debug_assertions) {
+        if let Ok(value) = std::env::var("DICTATEAI_FORCE_NO_ON_DEVICE") {
+            let normalized = value.trim().to_ascii_lowercase();
+            if matches!(normalized.as_str(), "1" | "true" | "yes" | "on") {
+                return false;
+            }
+        }
+    }
+
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+}
+
 pub fn status(app: &AppHandle) -> AppResult<OnDeviceStatus> {
+    if !is_supported() {
+        return Ok(OnDeviceStatus {
+            ready: false,
+            models_downloaded: false,
+            whisper_downloaded: false,
+            llama_downloaded: false,
+            llama_runtime_available: false,
+        });
+    }
+
     let whisper_downloaded = whisper_model_path(app)?.exists();
     let llama_downloaded = llama_model_path(app)?.exists();
     let models_downloaded = whisper_downloaded && llama_downloaded;
@@ -42,6 +66,10 @@ pub fn status(app: &AppHandle) -> AppResult<OnDeviceStatus> {
 }
 
 pub async fn download_models(app: &AppHandle) -> AppResult<OnDeviceStatus> {
+    if !is_supported() {
+        return Err(AppError::Config(UNSUPPORTED_BUILD_MESSAGE.into()));
+    }
+
     let whisper_path = whisper_model_path(app)?;
     let llama_path = llama_model_path(app)?;
 
@@ -56,6 +84,10 @@ pub async fn download_models(app: &AppHandle) -> AppResult<OnDeviceStatus> {
 }
 
 pub fn remove_models(app: &AppHandle) -> AppResult<OnDeviceStatus> {
+    if !is_supported() {
+        return status(app);
+    }
+
     let whisper_path = whisper_model_path(app)?;
     let llama_path = llama_model_path(app)?;
 
@@ -66,6 +98,10 @@ pub fn remove_models(app: &AppHandle) -> AppResult<OnDeviceStatus> {
 }
 
 pub async fn transcribe(app: &AppHandle, audio: Vec<f32>, language: String) -> AppResult<String> {
+    if !is_supported() {
+        return Err(AppError::Config(UNSUPPORTED_BUILD_MESSAGE.into()));
+    }
+
     let model_path = whisper_model_path(app)?;
     if !model_path.exists() {
         return Err(AppError::Config(
@@ -87,6 +123,10 @@ pub async fn rewrite(
     system_prompt: String,
     user_message: String,
 ) -> AppResult<String> {
+    if !is_supported() {
+        return Err(AppError::Config(UNSUPPORTED_BUILD_MESSAGE.into()));
+    }
+
     let model_path = llama_model_path(app)?;
     if !model_path.exists() {
         return Err(AppError::Config(
@@ -235,6 +275,10 @@ fn strip_surrounding_quotes(input: &str) -> &str {
 }
 
 fn resolve_llama_cli() -> Option<PathBuf> {
+    if !is_supported() {
+        return None;
+    }
+
     if let Some(candidate) = bundled_sidecar_path().filter(|path| path.exists()) {
         return Some(candidate);
     }
@@ -266,9 +310,19 @@ fn bundled_sidecar_path() -> Option<PathBuf> {
         return None;
     }
 
-    exe_path
-        .parent()
-        .map(|dir| dir.join(bundled_sidecar_name()))
+    let macos_dir = exe_path.parent()?;
+    let sidecar_in_macos_dir = macos_dir.join(bundled_sidecar_name());
+    if sidecar_in_macos_dir.exists() {
+        return Some(sidecar_in_macos_dir);
+    }
+
+    let contents_dir = macos_dir.parent()?;
+    Some(
+        contents_dir
+            .join("Resources")
+            .join("sidecars")
+            .join(bundled_sidecar_name()),
+    )
 }
 
 #[cfg(not(target_os = "macos"))]
