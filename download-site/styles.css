@@ -206,12 +206,6 @@ h2 {
   padding: 0 14px;
 }
 
-.availability-note {
-  margin: 14px 0 0;
-  color: var(--soft);
-  font-size: 0.95rem;
-}
-
 .support-note {
   margin: 14px 0 0;
 }
