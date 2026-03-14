@@ -1,14 +1,15 @@
 # DictateAI Download Site
 
-This folder is a standalone static download page for the macOS desktop app.
+This folder is a standalone static download page for the DictateAI macOS desktop app.
+It is now set up for Vercel and currently supports Apple Silicon only.
 
 ## What it ships
 
 - `index.html`: landing page
 - `styles.css`: static styling
+- `vercel.json`: Vercel routing and cache headers
 - `assets/icon.png`: icon used on the page
 - `downloads/DictateAI-latest-aarch64.dmg`: the public download artifact
-- `downloads/DictateAI-latest-x64.dmg`: the Intel macOS download artifact
 
 ## Update the downloadable app
 
@@ -26,32 +27,23 @@ cp /Users/bytedance/Documents/Personal/Coding/dictate-ai/src-tauri/target/releas
   /Users/bytedance/Documents/Personal/Coding/dictate-ai/download-site/downloads/DictateAI-latest-aarch64.dmg
 ```
 
-3. Build a new Intel release locally:
+3. Update the visible version label in `index.html` if needed.
 
-```bash
-rustup target add x86_64-apple-darwin
-```
+4. Commit and push.
 
-The current Intel build is intentionally API-only. The bundled on-device runtime is disabled on non-Apple-Silicon builds, so an x86_64 `llama-cli` sidecar is not required for this release path.
+## Deploy on Vercel
 
-Then build:
+1. Import the GitHub repo into Vercel.
+2. Set the project Root Directory to `download-site`.
+3. Leave the framework preset as `Other`.
+4. No build command is required.
+5. Deploy.
 
-```bash
-cd /Users/bytedance/Documents/Personal/Coding/dictate-ai
-env CARGO_TARGET_DIR=/tmp/dictateai-target npm run tauri build -- --target x86_64-apple-darwin
-```
-
-And copy the Intel DMG into the public download slot:
-
-```bash
-cp /tmp/dictateai-target/x86_64-apple-darwin/release/bundle/dmg/DictateAI_<version>_x64.dmg \
-  /Users/bytedance/Documents/Personal/Coding/dictate-ai/download-site/downloads/DictateAI-latest-x64.dmg
-```
-
-4. Update the visible version label in `index.html` if needed.
-
-5. Commit and push. Render will redeploy the static site from this folder.
+`vercel.json` handles:
+- `/download` redirecting to the latest Apple Silicon DMG
+- short cache for the page
+- longer cache for files under `/downloads`
 
 ## Why the DMG is committed
 
-Render cannot build a macOS DMG on its Linux static-site builders, so the downloadable artifact must already exist in the repository (or be fetched from another host). For now, this site serves the prebuilt DMG directly from source control.
+Vercel cannot build a macOS DMG on its Linux builders, so the downloadable artifact must already exist in the repository (or be fetched from another host). For now, this site serves the prebuilt DMG directly from source control.
