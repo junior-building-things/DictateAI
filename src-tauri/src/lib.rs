@@ -3,7 +3,6 @@ mod commands;
 mod db;
 mod error;
 mod hotkey;
-mod on_device;
 mod overlay;
 mod paste;
 mod pipeline;
@@ -30,6 +29,31 @@ pub fn run() {
                 .with_handler(|app, _shortcut, event| {
                     let hotkey_state = app.state::<HotkeyState>();
                     let app_state = app.state::<AppState>();
+                    let hotkey_mode = {
+                        let db = app_state.db.lock().unwrap();
+                        settings::get(&db, "hotkey_mode").unwrap_or_else(|_| "hold".into())
+                    };
+
+                    if hotkey_mode == "toggle" {
+                        if event.state == ShortcutState::Pressed {
+                            if app_state.is_recording() {
+                                if let Some(audio_data) =
+                                    hotkey::handler::on_released(app, &hotkey_state, &app_state)
+                                {
+                                    let app_clone = app.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        if let Err(e) = pipeline::run(app_clone, audio_data).await {
+                                            log::error!("Pipeline failed: {}", e);
+                                        }
+                                    });
+                                }
+                            } else if app_state.is_idle() {
+                                hotkey::handler::on_pressed(app, &hotkey_state, &app_state);
+                            }
+                        }
+                        return;
+                    }
+
                     match event.state {
                         ShortcutState::Pressed => {
                             hotkey::handler::on_pressed(app, &hotkey_state, &app_state);
@@ -101,8 +125,7 @@ pub fn run() {
             let hotkey_str = {
                 let st = handle.state::<AppState>();
                 let db = st.db.lock().unwrap();
-                settings::get(&db, "hotkey")
-                    .unwrap_or_else(|_| "CommandOrControl+S".into())
+                settings::get(&db, "hotkey").unwrap_or_else(|_| "CommandOrControl+S".into())
             };
 
             let shortcut: Shortcut = hotkey_str
@@ -128,9 +151,8 @@ pub fn run() {
                         window_width,
                         window_height,
                     )));
-                    let _ = window.set_position(tauri::Position::Logical(
-                        LogicalPosition::new(x, 24.0),
-                    ));
+                    let _ = window
+                        .set_position(tauri::Position::Logical(LogicalPosition::new(x, 24.0)));
                 }
             }
 
@@ -145,6 +167,8 @@ pub fn run() {
             commands::get_default_system_prompt,
             commands::get_history,
             commands::delete_history_entry,
+            commands::update_history_entry,
+            commands::set_history_favorite,
             commands::clear_history,
             commands::get_vocabulary,
             commands::add_vocabulary_term,
@@ -153,13 +177,16 @@ pub fn run() {
             commands::get_available_models,
             commands::validate_gemini_api_key,
             commands::validate_openai_api_key,
+            commands::validate_deepgram_api_key,
+            commands::validate_google_speech_config,
+            commands::validate_nvidia_config,
+            commands::validate_alibaba_api_key,
             commands::get_app_state,
             commands::cancel_processing,
-            commands::get_on_device_status,
-            commands::is_on_device_supported,
-            commands::download_on_device_models,
-            commands::remove_on_device_models,
+            commands::start_manual_recording,
+            commands::stop_manual_recording,
             commands::check_accessibility,
+            commands::check_microphone_permission,
             commands::prompt_microphone_permission,
             commands::prompt_accessibility_permission,
         ])

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { HistoryEntry, ModelInfo, OnDeviceStatus, VocabularyTerm } from "./types";
+import type { HistoryEntry, ModelInfo, VocabularyTerm } from "./types";
 
 // Settings
 export const getSettings = () =>
@@ -20,6 +20,9 @@ export const getDefaultSystemPrompt = () =>
 export const checkAccessibility = () =>
   invoke<boolean>("check_accessibility");
 
+export const checkMicrophonePermission = () =>
+  invoke<string>("check_microphone_permission");
+
 export const promptMicrophonePermission = () =>
   invoke<void>("prompt_microphone_permission");
 
@@ -32,6 +35,12 @@ export const getHistory = (page: number, perPage: number) =>
 
 export const deleteHistoryEntry = (id: number) =>
   invoke<void>("delete_history_entry", { id });
+
+export const updateHistoryEntry = (id: number, rewritten: string) =>
+  invoke<void>("update_history_entry", { id, rewritten });
+
+export const setHistoryFavorite = (id: number, favorited: boolean) =>
+  invoke<void>("set_history_favorite", { id, favorited });
 
 export const clearHistory = () =>
   invoke<void>("clear_history");
@@ -70,6 +79,22 @@ export const validateGeminiApiKey = (apiKey: string, modelName: string) =>
 export const validateOpenAiApiKey = (apiKey: string) =>
   invoke<boolean>("validate_openai_api_key", { apiKey });
 
+export const validateDeepgramApiKey = (apiKey: string) =>
+  invoke<boolean>("validate_deepgram_api_key", { apiKey });
+
+export const validateGoogleSpeechConfig = (
+  apiKey: string,
+  projectId: string,
+  region: string
+) =>
+  invoke<boolean>("validate_google_speech_config", { apiKey, projectId, region });
+
+export const validateNvidiaConfig = (baseUrl: string, apiKey: string) =>
+  invoke<boolean>("validate_nvidia_config", { baseUrl, apiKey });
+
+export const validateAlibabaApiKey = (apiKey: string) =>
+  invoke<boolean>("validate_alibaba_api_key", { apiKey });
+
 // App State
 export const getAppState = () =>
   invoke<string>("get_app_state");
@@ -77,14 +102,8 @@ export const getAppState = () =>
 export const cancelProcessing = () =>
   invoke<void>("cancel_processing");
 
-export const getOnDeviceStatus = () =>
-  invoke<OnDeviceStatus>("get_on_device_status");
+export const startManualRecording = () =>
+  invoke<void>("start_manual_recording");
 
-export const isOnDeviceSupported = () =>
-  invoke<boolean>("is_on_device_supported");
-
-export const downloadOnDeviceModels = () =>
-  invoke<OnDeviceStatus>("download_on_device_models");
-
-export const removeOnDeviceModels = () =>
-  invoke<OnDeviceStatus>("remove_on_device_models");
+export const stopManualRecording = () =>
+  invoke<void>("stop_manual_recording");

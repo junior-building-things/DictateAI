@@ -2,9 +2,13 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::db::{history, settings, vocabulary};
+use crate::hotkey::handler::HotkeyState;
+use crate::processing_mode;
+use crate::rewrite::alibaba;
 use crate::rewrite::gemini;
 use crate::rewrite::prompt;
 use crate::state::{AppState, STATE_IDLE};
+use crate::transcribe::api;
 use crate::transcribe::model_manager;
 
 // --- Settings ---
@@ -28,11 +32,7 @@ pub fn save_setting(state: State<AppState>, key: String, value: String) -> Resul
 }
 
 #[tauri::command]
-pub fn update_hotkey(
-    app: AppHandle,
-    state: State<AppState>,
-    hotkey: String,
-) -> Result<(), String> {
+pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> Result<(), String> {
     let shortcut: Shortcut = hotkey
         .parse()
         .map_err(|e| format!("Invalid hotkey '{}': {}", hotkey, e))?;
@@ -72,6 +72,31 @@ pub fn delete_history_entry(state: State<AppState>, id: i64) -> Result<(), Strin
 }
 
 #[tauri::command]
+pub fn update_history_entry(
+    state: State<AppState>,
+    id: i64,
+    rewritten: String,
+) -> Result<(), String> {
+    let trimmed = rewritten.trim();
+    if trimmed.is_empty() {
+        return Err("Rewritten text cannot be empty.".into());
+    }
+
+    let db = state.db.lock().unwrap();
+    history::update_rewritten_text(&db, id, trimmed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_history_favorite(
+    state: State<AppState>,
+    id: i64,
+    favorited: bool,
+) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    history::update_favorite(&db, id, favorited).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn clear_history(state: State<AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     history::clear_all(&db).map_err(|e| e.to_string())
@@ -80,9 +105,7 @@ pub fn clear_history(state: State<AppState>) -> Result<(), String> {
 // --- Vocabulary ---
 
 #[tauri::command]
-pub fn get_vocabulary(
-    state: State<AppState>,
-) -> Result<Vec<vocabulary::VocabularyTerm>, String> {
+pub fn get_vocabulary(state: State<AppState>) -> Result<Vec<vocabulary::VocabularyTerm>, String> {
     let db = state.db.lock().unwrap();
     vocabulary::get_all(&db).map_err(|e| e.to_string())
 }
@@ -143,10 +166,7 @@ pub fn get_available_models(state: State<AppState>) -> Vec<model_manager::ModelI
 }
 
 #[tauri::command]
-pub async fn validate_gemini_api_key(
-    api_key: String,
-    model_name: String,
-) -> Result<bool, String> {
+pub async fn validate_gemini_api_key(api_key: String, model_name: String) -> Result<bool, String> {
     gemini::validate_api_key(&api_key, &model_name)
         .await
         .map_err(|e| e.to_string())?;
@@ -155,9 +175,49 @@ pub async fn validate_gemini_api_key(
 
 #[tauri::command]
 pub async fn validate_openai_api_key(api_key: String) -> Result<bool, String> {
-    crate::transcribe::api::validate_openai_api_key(&api_key)
+    api::validate_openai_api_key(&api_key)
         .await
         .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn validate_deepgram_api_key(api_key: String) -> Result<bool, String> {
+    api::validate_deepgram_api_key(&api_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn validate_google_speech_config(
+    api_key: String,
+    project_id: String,
+    region: String,
+) -> Result<bool, String> {
+    api::validate_google_speech_config(&api_key, &project_id, &region)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn validate_nvidia_config(base_url: String, api_key: String) -> Result<bool, String> {
+    api::validate_nvidia_config(&base_url, &api_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn validate_alibaba_api_key(api_key: String) -> Result<bool, String> {
+    alibaba::validate_api_key(
+        &api_key,
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "qwen2.5-7b-instruct",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -182,29 +242,51 @@ pub fn cancel_processing(app: AppHandle, state: State<AppState>) {
 }
 
 #[tauri::command]
-pub fn get_on_device_status(app: AppHandle) -> Result<crate::on_device::OnDeviceStatus, String> {
-    crate::on_device::status(&app).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn is_on_device_supported() -> bool {
-    crate::on_device::is_supported()
-}
-
-#[tauri::command]
-pub async fn download_on_device_models(
+pub fn start_manual_recording(
     app: AppHandle,
-) -> Result<crate::on_device::OnDeviceStatus, String> {
-    crate::on_device::download_models(&app)
-        .await
-        .map_err(|e| e.to_string())
+    hotkey_state: State<HotkeyState>,
+    state: State<AppState>,
+) -> Result<(), String> {
+    if !state.is_idle() {
+        return Err("Dictation is already active.".into());
+    }
+
+    let Some(_) = processing_mode::resolve(&app, &state) else {
+        return Err(
+            "No speech model is currently available. Configure a supported speech provider in Models."
+                .into(),
+        );
+    };
+
+    crate::hotkey::handler::on_pressed(&app, &hotkey_state, &state);
+
+    if state.is_recording() {
+        Ok(())
+    } else {
+        Err("Failed to start recording.".into())
+    }
 }
 
 #[tauri::command]
-pub fn remove_on_device_models(
+pub fn stop_manual_recording(
     app: AppHandle,
-) -> Result<crate::on_device::OnDeviceStatus, String> {
-    crate::on_device::remove_models(&app).map_err(|e| e.to_string())
+    hotkey_state: State<HotkeyState>,
+    state: State<AppState>,
+) -> Result<(), String> {
+    if !state.is_recording() {
+        return Err("Dictation is not currently listening.".into());
+    }
+
+    if let Some(audio_data) = crate::hotkey::handler::on_released(&app, &hotkey_state, &state) {
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = crate::pipeline::run(app_clone, audio_data).await {
+                log::error!("Pipeline failed: {}", e);
+            }
+        });
+    }
+
+    Ok(())
 }
 
 // --- Accessibility ---
@@ -212,6 +294,11 @@ pub fn remove_on_device_models(
 #[tauri::command]
 pub fn check_accessibility() -> bool {
     crate::paste::simulate::check_accessibility()
+}
+
+#[tauri::command]
+pub fn check_microphone_permission() -> String {
+    crate::paste::simulate::check_microphone_permission()
 }
 
 #[tauri::command]

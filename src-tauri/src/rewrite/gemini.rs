@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
-const GEMINI_API_URL_PREFIX: &str =
-    "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_API_URL_PREFIX: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 #[derive(Serialize)]
 struct GeminiRequest {
@@ -82,8 +81,8 @@ pub async fn rewrite(
 
     let (api_model, thinking_config) = match model {
         "gemini-2.5-flash-lite" => ("gemini-2.5-flash-lite", None),
-        "gemini-3-flash" => (
-            "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite-preview" => (
+            "gemini-3.1-flash-lite-preview",
             Some(ThinkingConfig {
                 thinking_level: "minimal",
             }),
@@ -137,7 +136,10 @@ pub async fn rewrite(
         .map_err(|e| AppError::Rewrite(format!("Failed to parse Gemini response: {}", e)))?;
 
     if let Some(error) = gemini_response.error {
-        return Err(AppError::Rewrite(format!("Gemini API error: {}", error.message)));
+        return Err(AppError::Rewrite(format!(
+            "Gemini API error: {}",
+            error.message
+        )));
     }
 
     let text = gemini_response

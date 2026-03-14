@@ -1,37 +1,50 @@
+use crate::db::history::FavoriteRewriteExample;
 use crate::db::vocabulary::VocabularyTerm;
 
-const DEFAULT_SYSTEM_INSTRUCTION: &str = r#"You are the DictateAI transcription post-processor. Your ONLY job is to lightly clean up raw speech transcriptions into written text.
+const DEFAULT_SYSTEM_INSTRUCTION: &str = r#"You are the DictateAI rewrite engine. Rewrite raw speech transcriptions into clear written text.
 
 CRITICAL RULES — follow these strictly:
-1. Make MINIMAL changes. Keep the user's original words as much as possible.
-2. Only remove obvious filler words: um, uh, er, hmm, you know, like (when used as filler).
-3. Remove obvious false starts and repeated words (e.g. "I I want" → "I want").
-4. Fix obvious punctuation and capitalization.
-5. Do NOT rephrase, restructure, or reword sentences.
-6. Do NOT add any words that were not spoken.
-7. Do NOT remove meaningful words — only fillers.
-8. Do NOT change vocabulary, tone, or formality level.
-9. Do NOT paraphrase. The output should be very close to the input, just cleaned up.
-10. If the transcription is already clean, return it unchanged.
-11. Use the vocabulary reference below for correct spelling of proper nouns and technical terms.
-12. Output ONLY the cleaned text. No explanations, no preamble, no quotes, no markdown.
+1. Preserve the user's meaning and intent.
+2. Remove filler words, repeated words, and obvious false starts.
+3. Fix grammar, capitalization, and punctuation.
+4. Keep the wording concise and natural.
+5. Do NOT invent facts, details, or requests that were not spoken.
+6. Keep names, product terms, and technical vocabulary accurate.
+7. Use a neutral, natural tone.
+8. Output ONLY the rewritten text. No explanations, no quotes, no markdown."#;
 
-## Examples
+const BASE_SYSTEM_INSTRUCTION: &str = r#"You are the DictateAI rewrite engine. Rewrite raw speech transcriptions into clear written text.
 
-Raw: "Hmm I see, but why do we need to relaunch it? Can't we just analyze the current performance? I mean the current data."
-Cleaned: "I see. But why do we need to relaunch it? Can't we just analyze the current data?"
-
-Raw: "Please help me update document A when you're done. Oh and also document B"
-Cleaned: "Please help me update document A and B when you're done""#;
+CRITICAL RULES — follow these strictly:
+1. Preserve the user's meaning and intent.
+2. Remove filler words, repeated words, and obvious false starts.
+3. Fix grammar, capitalization, and punctuation.
+4. Keep the wording concise and natural.
+5. Do NOT invent facts, details, or requests that were not spoken.
+6. Keep names, product terms, and technical vocabulary accurate.
+7. Output ONLY the rewritten text. No explanations, no quotes, no markdown."#;
 
 pub fn default_system_instruction() -> &'static str {
     DEFAULT_SYSTEM_INSTRUCTION
+}
+
+pub fn system_instruction_for_tone(tone: &str) -> String {
+    let normalized = normalize_tone(tone);
+    if normalized == "neutral" {
+        return DEFAULT_SYSTEM_INSTRUCTION.to_string();
+    }
+
+    format!(
+        "{BASE_SYSTEM_INSTRUCTION}\n8. {}",
+        tone_instruction(normalized)
+    )
 }
 
 pub fn build_prompt(
     system_instruction: &str,
     raw_transcript: &str,
     vocabulary: &[VocabularyTerm],
+    favorite_examples: &[FavoriteRewriteExample],
 ) -> (String, String) {
     let mut system = if system_instruction.trim().is_empty() {
         String::from(DEFAULT_SYSTEM_INSTRUCTION)
@@ -39,7 +52,6 @@ pub fn build_prompt(
         system_instruction.to_string()
     };
 
-    // Add vocabulary context
     if !vocabulary.is_empty() {
         system.push_str("\n\n## Vocabulary Reference\nThe user works with these specific terms. Always use the exact spelling shown:\n");
         for term in vocabulary {
@@ -54,10 +66,41 @@ pub fn build_prompt(
         }
     }
 
-    let user_message = format!(
-        "Raw: \"{}\"",
-        raw_transcript
-    );
+    if !favorite_examples.is_empty() {
+        system.push_str(
+            "\n\n## Favorite Rewrite Examples\nUse these starred examples as style guidance for future rewrites. Preserve the current transcript's meaning and do not copy phrasing unless it naturally fits.\n",
+        );
+        for example in favorite_examples {
+            system.push_str(&format!(
+                "- Raw: \"{}\"\n  Rewritten: \"{}\"\n",
+                example.raw_text, example.rewritten
+            ));
+        }
+    }
+
+    let user_message = format!("Raw: \"{}\"", raw_transcript);
 
     (system, user_message)
+}
+
+fn normalize_tone(tone: &str) -> &str {
+    let normalized = tone.trim().to_lowercase();
+    match normalized.as_str() {
+        "casual" => "casual",
+        "friendly" => "friendly",
+        "confident" => "professional",
+        "professional" => "professional",
+        "enthusiastic" => "enthusiastic",
+        _ => "neutral",
+    }
+}
+
+fn tone_instruction(tone: &str) -> &'static str {
+    match tone {
+        "casual" => "Use a casual, conversational tone.",
+        "friendly" => "Use a warm, friendly tone.",
+        "professional" => "Use a clear, professional tone.",
+        "enthusiastic" => "Use an energetic, enthusiastic tone.",
+        _ => "Use a neutral, natural tone.",
+    }
 }

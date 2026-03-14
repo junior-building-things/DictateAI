@@ -27,9 +27,6 @@ rodio = "0.20"
 hound = "3.5"
 rubato = "0.16"
 
-# Speech-to-text
-whisper-rs = "0.13"
-
 # HTTP client for Gemini API
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream", "multipart"] }
 futures-util = "0.3"

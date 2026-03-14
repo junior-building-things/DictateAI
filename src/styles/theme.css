@@ -1,0 +1,171 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  letter-spacing: -0.01em;
+  background: #050505;
+  color: #f5f5f5;
+}
+
+body.main-window {
+  background:
+    radial-gradient(circle at top, #101010 0%, #060606 48%, #030303 100%);
+}
+
+body.overlay-window {
+  overflow: hidden;
+  background: transparent !important;
+}
+
+[data-sonner-toaster][data-sonner-theme="dark"] {
+  --info-bg: hsl(215, 80%, 10%);
+  --info-border: hsl(220, 55%, 22%);
+}
+
+@keyframes overlay-audio-line-a {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scaleY(0.55);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes overlay-audio-line-b {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scaleY(0.85);
+  }
+
+  35% {
+    opacity: 1;
+    transform: scaleY(0.45);
+  }
+
+  70% {
+    opacity: 0.9;
+    transform: scaleY(1.1);
+  }
+}
+
+@keyframes overlay-audio-line-c {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scaleY(0.4);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scaleY(1.15);
+  }
+}
+
+@keyframes overlay-rewrite-pen {
+  0% {
+    opacity: 0.92;
+    transform: rotate(0deg);
+  }
+
+  50% {
+    opacity: 1;
+    transform: rotate(8deg);
+  }
+
+  100% {
+    opacity: 0.92;
+    transform: rotate(0deg);
+  }
+}
+
+.overlay-audio-lines path {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+.overlay-audio-lines path:nth-of-type(1),
+.overlay-audio-lines path:nth-of-type(5) {
+  animation: overlay-audio-line-a 0.95s ease-in-out infinite;
+}
+
+.overlay-audio-lines path:nth-of-type(2),
+.overlay-audio-lines path:nth-of-type(4) {
+  animation: overlay-audio-line-b 0.95s ease-in-out infinite;
+}
+
+.overlay-audio-lines path:nth-of-type(3) {
+  animation: overlay-audio-line-c 0.95s ease-in-out infinite;
+}
+
+.overlay-rewrite-pen path {
+  transform-box: fill-box;
+}
+
+.overlay-rewrite-pen path:first-of-type {
+  transform-origin: center;
+}
+
+.overlay-rewrite-pen path:nth-of-type(2) {
+  transform-origin: left center;
+  will-change: transform, opacity;
+  animation: overlay-rewrite-pen 1.05s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-audio-lines path,
+  .overlay-rewrite-pen path:nth-of-type(2) {
+    animation: none !important;
+  }
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a,
+select,
+input[type="checkbox"],
+input[type="radio"],
+[role="button"] {
+  cursor: pointer;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: #2a2a2a;
+}

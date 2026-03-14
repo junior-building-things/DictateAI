@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.typeless.com)",
+      "WebFetch(domain:v2.tauri.app)",
+      "Bash(cargo:*)",
+      "Bash(node:*)",
+      "Bash(npm --version:*)",
+      "Bash(export PATH=\"$HOME/.cargo/bin:$HOME/.nvm/versions/node/*/bin:/usr/local/bin:/opt/homebrew/bin:$PATH\")",
+      "Bash(rustc:*)",
+      "Bash(pnpm --version:*)",
+      "Bash(curl:*)",
+      "Bash(sh -s -- -y)",
+      "Bash(source:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tauri init:*)",
+      "Bash(python3:*)",
+      "Bash(file:*)",
+      "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")",
+      "Bash(export PATH=\"$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$PATH\")",
+      "Bash(brew install:*)",
+      "Bash(export PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH\")",
+      "Bash(npm run build:*)",
+      "Bash(git init:*)",
+      "Bash(pkill:*)",
+      "Bash(npx tauri dev:*)",
+      "Bash(npx tauri build:*)",
+      "Bash(echo:*)",
+      "Bash(ps:*)",
+      "Bash(tccutil reset:*)",
+      "Bash(sqlite3:*)",
+      "Bash(/tmp/mic_test:*)",
+      "Bash(chmod:*)",
+      "Bash(ls:*)",
+      "Bash(log show:*)"
+    ]
+  }
+}

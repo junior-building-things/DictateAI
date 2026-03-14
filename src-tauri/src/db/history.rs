@@ -11,6 +11,13 @@ pub struct HistoryEntry {
     pub model_used: String,
     pub duration_ms: i64,
     pub created_at: String,
+    pub favorited: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FavoriteRewriteExample {
+    pub raw_text: String,
+    pub rewritten: String,
 }
 
 pub fn insert_entry(
@@ -32,15 +39,13 @@ pub fn get_page(
     page: usize,
     per_page: usize,
 ) -> AppResult<(Vec<HistoryEntry>, usize)> {
-    let total: usize = conn.query_row(
-        "SELECT COUNT(*) FROM transcription_history",
-        [],
-        |row| row.get(0),
-    )?;
+    let total: usize = conn.query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+        row.get(0)
+    })?;
 
     let offset = page * per_page;
     let mut stmt = conn.prepare(
-        "SELECT id, raw_text, rewritten, model_used, duration_ms, created_at
+        "SELECT id, raw_text, rewritten, model_used, duration_ms, created_at, favorited
          FROM transcription_history
          ORDER BY created_at DESC
          LIMIT ?1 OFFSET ?2",
@@ -55,6 +60,7 @@ pub fn get_page(
                 model_used: row.get(3)?,
                 duration_ms: row.get(4)?,
                 created_at: row.get(5)?,
+                favorited: row.get::<_, i64>(6)? != 0,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -68,6 +74,46 @@ pub fn delete_entry(conn: &Connection, id: i64) -> AppResult<()> {
         rusqlite::params![id],
     )?;
     Ok(())
+}
+
+pub fn update_rewritten_text(conn: &Connection, id: i64, rewritten: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE transcription_history SET rewritten = ?1 WHERE id = ?2",
+        rusqlite::params![rewritten, id],
+    )?;
+    Ok(())
+}
+
+pub fn update_favorite(conn: &Connection, id: i64, favorited: bool) -> AppResult<()> {
+    conn.execute(
+        "UPDATE transcription_history SET favorited = ?1 WHERE id = ?2",
+        rusqlite::params![if favorited { 1 } else { 0 }, id],
+    )?;
+    Ok(())
+}
+
+pub fn get_favorite_examples(
+    conn: &Connection,
+    limit: usize,
+) -> AppResult<Vec<FavoriteRewriteExample>> {
+    let mut stmt = conn.prepare(
+        "SELECT raw_text, rewritten
+         FROM transcription_history
+         WHERE favorited = 1
+         ORDER BY created_at DESC
+         LIMIT ?1",
+    )?;
+
+    let entries = stmt
+        .query_map(rusqlite::params![limit], |row| {
+            Ok(FavoriteRewriteExample {
+                raw_text: row.get(0)?,
+                rewritten: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(entries)
 }
 
 pub fn clear_all(conn: &Connection) -> AppResult<()> {

@@ -36,9 +36,7 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
         log::info!("Hotkey ignored: no processing mode is currently available.");
         return;
     };
-    if mode_resolution.fell_back_from_on_device {
-        log::info!("On-device mode unavailable, hotkey will fall back to API mode.");
-    }
+    let _ = mode_resolution;
 
     // Record press time
     {

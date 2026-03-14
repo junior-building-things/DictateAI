@@ -70,7 +70,7 @@ export default function VocabularyManager() {
   if (loading) return <div className="p-6 text-sm text-neutral-500">{t("loading")}</div>;
 
   return (
-    <section className="space-y-6 p-7">
+    <section className="space-y-6">
       <div className="surface-card space-y-5 p-6">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-2">

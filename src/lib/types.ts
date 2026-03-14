@@ -5,6 +5,7 @@ export interface HistoryEntry {
   model_used: string;
   duration_ms: number;
   created_at: string;
+  favorited: boolean;
 }
 
 export interface VocabularyTerm {
@@ -23,14 +24,6 @@ export interface ModelInfo {
   description: string;
   filename: string;
   size_mb: number;
-}
-
-export interface OnDeviceStatus {
-  ready: boolean;
-  modelsDownloaded: boolean;
-  whisperDownloaded: boolean;
-  llamaDownloaded: boolean;
-  llamaRuntimeAvailable: boolean;
 }
 
 export type AppStatus = "idle" | "recording" | "processing";

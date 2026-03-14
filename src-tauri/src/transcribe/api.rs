@@ -3,9 +3,9 @@ use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use futures_util::{SinkExt, StreamExt};
 use flate2::read::GzDecoder;
-use reqwest::multipart;
+use futures_util::{SinkExt, StreamExt};
+use reqwest::{multipart, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -15,10 +15,15 @@ use crate::error::{AppError, AppResult};
 
 #[derive(Clone)]
 pub struct SpeechApiSettings {
+    pub deepgram_api_key: String,
     pub openai_api_key: String,
     pub google_api_key: String,
     pub google_project_id: String,
     pub google_region: String,
+    pub nvidia_base_url: String,
+    pub nvidia_api_key: String,
+    pub alibaba_api_key: String,
+    pub alibaba_base_url: String,
     pub doubao_access_token: String,
     pub doubao_app_id: String,
     pub doubao_cluster: String,
@@ -37,15 +42,18 @@ pub async fn transcribe(
     let wav_bytes = pcm_to_wav(audio)?;
 
     match model {
+        "deepgram-nova-3" => {
+            transcribe_deepgram(&wav_bytes, language, &settings.deepgram_api_key).await
+        }
         "gpt-4o-mini-transcribe" | "gpt-4o-transcribe" => {
             transcribe_openai(&wav_bytes, language, model, &settings.openai_api_key).await
         }
-        "google-chirp-3" => {
-            transcribe_google_chirp(&wav_bytes, language, &settings).await
+        "google-chirp-3" => transcribe_google_chirp(&wav_bytes, language, &settings).await,
+        "nvidia-parakeet-tdt-0.6b-v2" | "nvidia-canary-qwen-2.5b" => {
+            transcribe_nvidia(&wav_bytes, language, model, &settings).await
         }
-        "doubao-byteplus" => {
-            transcribe_doubao(&wav_bytes, language, &settings).await
-        }
+        "alibaba-qwen3-asr-flash" => transcribe_alibaba(&wav_bytes, language, &settings).await,
+        "doubao-byteplus" => transcribe_doubao(&wav_bytes, language, &settings).await,
         _ => Err(AppError::Config(format!(
             "Unsupported speech model: {}",
             model
@@ -55,14 +63,12 @@ pub async fn transcribe(
 
 pub async fn validate_openai_api_key(api_key: &str) -> AppResult<()> {
     if api_key.trim().is_empty() {
-        return Err(AppError::Config(
-            "OpenAI API key not configured.".into(),
-        ));
+        return Err(AppError::Config("OpenAI API key not configured.".into()));
     }
 
     let client = reqwest::Client::new();
     let response = client
-        .get("https://api.openai.com/v1/models/gpt-4o-mini-transcribe")
+        .get("https://api.openai.com/v1/models/gpt-4.1-mini")
         .bearer_auth(api_key)
         .send()
         .await
@@ -78,6 +84,121 @@ pub async fn validate_openai_api_key(api_key: &str) -> AppResult<()> {
     }
 
     Ok(())
+}
+
+pub async fn validate_deepgram_api_key(api_key: &str) -> AppResult<()> {
+    if api_key.trim().is_empty() {
+        return Err(AppError::Config("Deepgram API key not configured.".into()));
+    }
+
+    let wav_bytes = pcm_to_wav(&vec![0.0; 1600])?;
+    let url = "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&language=en-US";
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .header("Content-Type", "audio/wav")
+        .header("Authorization", format!("Token {}", api_key.trim()))
+        .body(wav_bytes)
+        .send()
+        .await
+        .map_err(|error| {
+            AppError::Transcription(format!("Deepgram validation request failed: {}", error))
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Transcription(format!(
+            "Deepgram validation returned {}: {}",
+            status, body
+        )));
+    }
+
+    Ok(())
+}
+
+pub async fn validate_google_speech_config(
+    api_key: &str,
+    project_id: &str,
+    region: &str,
+) -> AppResult<()> {
+    if api_key.trim().is_empty() {
+        return Err(AppError::Config("Google Speech API key not configured.".into()));
+    }
+    if project_id.trim().is_empty() {
+        return Err(AppError::Config(
+            "Google Speech project ID not configured.".into(),
+        ));
+    }
+
+    let settings = SpeechApiSettings {
+        deepgram_api_key: String::new(),
+        openai_api_key: String::new(),
+        google_api_key: api_key.trim().to_string(),
+        google_project_id: project_id.trim().to_string(),
+        google_region: if region.trim().is_empty() {
+            "us".to_string()
+        } else {
+            region.trim().to_string()
+        },
+        nvidia_base_url: String::new(),
+        nvidia_api_key: String::new(),
+        alibaba_api_key: String::new(),
+        alibaba_base_url: String::new(),
+        doubao_access_token: String::new(),
+        doubao_app_id: String::new(),
+        doubao_cluster: String::new(),
+    };
+
+    let wav_bytes = pcm_to_wav(&vec![0.0; 1600])?;
+    transcribe_google_chirp(&wav_bytes, "en", &settings).await?;
+
+    Ok(())
+}
+
+pub async fn validate_nvidia_config(base_url: &str, api_key: &str) -> AppResult<()> {
+    if base_url.trim().is_empty() {
+        return Err(AppError::Config(
+            "NVIDIA base URL not configured.".into(),
+        ));
+    }
+
+    let endpoint = join_endpoint(base_url, "/v1/audio/transcriptions");
+    let client = reqwest::Client::new();
+    let request = client.post(endpoint);
+    let request = if api_key.trim().is_empty() {
+        request
+    } else {
+        request.bearer_auth(api_key.trim())
+    };
+
+    let response = request.send().await.map_err(|error| {
+        AppError::Transcription(format!("NVIDIA validation request failed: {}", error))
+    })?;
+
+    let status = response.status();
+    if status.is_success()
+        || status == StatusCode::BAD_REQUEST
+        || status == StatusCode::UNSUPPORTED_MEDIA_TYPE
+        || status == StatusCode::UNPROCESSABLE_ENTITY
+    {
+        return Ok(());
+    }
+
+    let body = response.text().await.unwrap_or_default();
+    match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(AppError::Transcription(
+            format!("NVIDIA endpoint rejected the API key: {}", body),
+        )),
+        StatusCode::NOT_FOUND => Err(AppError::Transcription(
+            "NVIDIA endpoint did not expose /v1/audio/transcriptions.".into(),
+        )),
+        _ => Err(AppError::Transcription(format!(
+            "NVIDIA validation returned {}: {}",
+            status, body
+        ))),
+    }
 }
 
 fn pcm_to_wav(audio: &[f32]) -> AppResult<Vec<u8>> {
@@ -96,9 +217,9 @@ fn pcm_to_wav(audio: &[f32]) -> AppResult<Vec<u8>> {
         for &sample in audio {
             let clamped = sample.clamp(-1.0, 1.0);
             let int_sample = (clamped * i16::MAX as f32) as i16;
-            writer
-                .write_sample(int_sample)
-                .map_err(|e| AppError::Transcription(format!("Failed to write WAV sample: {}", e)))?;
+            writer.write_sample(int_sample).map_err(|e| {
+                AppError::Transcription(format!("Failed to write WAV sample: {}", e))
+            })?;
         }
 
         writer
@@ -143,7 +264,9 @@ async fn transcribe_openai(
         .multipart(form)
         .send()
         .await
-        .map_err(|e| AppError::Transcription(format!("OpenAI transcription request failed: {}", e)))?;
+        .map_err(|e| {
+            AppError::Transcription(format!("OpenAI transcription request failed: {}", e))
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -160,6 +283,72 @@ async fn transcribe_openai(
         .map_err(|e| AppError::Transcription(format!("Failed to parse OpenAI response: {}", e)))?;
 
     Ok(parsed.text.trim().to_string())
+}
+
+#[derive(Deserialize)]
+struct DeepgramResponse {
+    results: DeepgramResults,
+}
+
+#[derive(Deserialize)]
+struct DeepgramResults {
+    channels: Vec<DeepgramChannel>,
+}
+
+#[derive(Deserialize)]
+struct DeepgramChannel {
+    alternatives: Vec<DeepgramAlternative>,
+}
+
+#[derive(Deserialize)]
+struct DeepgramAlternative {
+    transcript: String,
+}
+
+async fn transcribe_deepgram(wav_bytes: &[u8], language: &str, api_key: &str) -> AppResult<String> {
+    if api_key.trim().is_empty() {
+        return Err(AppError::Config(
+            "Deepgram Nova-3 requires speech_deepgram_api_key in settings.".into(),
+        ));
+    }
+
+    let url = format!(
+        "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&language={}",
+        language_to_bcp47(language)
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .header("Content-Type", "audio/wav")
+        .header("Authorization", format!("Token {}", api_key.trim()))
+        .body(wav_bytes.to_vec())
+        .send()
+        .await
+        .map_err(|e| AppError::Transcription(format!("Deepgram request failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Transcription(format!(
+            "Deepgram API returned {}: {}",
+            status, body
+        )));
+    }
+
+    let parsed: DeepgramResponse = response.json().await.map_err(|e| {
+        AppError::Transcription(format!("Failed to parse Deepgram response: {}", e))
+    })?;
+
+    let transcript = parsed
+        .results
+        .channels
+        .into_iter()
+        .flat_map(|channel| channel.alternatives.into_iter().map(|alt| alt.transcript))
+        .find(|text| !text.trim().is_empty())
+        .ok_or_else(|| AppError::Transcription("Deepgram returned empty transcription.".into()))?;
+
+    Ok(transcript.trim().to_string())
 }
 
 #[derive(Serialize)]
@@ -264,6 +453,133 @@ async fn transcribe_google_chirp(
     Ok(text)
 }
 
+async fn transcribe_nvidia(
+    wav_bytes: &[u8],
+    language: &str,
+    model: &str,
+    settings: &SpeechApiSettings,
+) -> AppResult<String> {
+    if settings.nvidia_base_url.trim().is_empty() {
+        return Err(AppError::Config(
+            "NVIDIA speech requires speech_nvidia_base_url in settings.".into(),
+        ));
+    }
+
+    #[derive(Deserialize)]
+    struct NvidiaTranscriptionResponse {
+        text: String,
+    }
+
+    let file_part = multipart::Part::bytes(wav_bytes.to_vec())
+        .file_name("audio.wav")
+        .mime_str("audio/wav")
+        .map_err(|e| AppError::Transcription(format!("Failed to prepare audio part: {}", e)))?;
+
+    let form = multipart::Form::new()
+        .part("file", file_part)
+        .text("language", language_to_bcp47(language).to_string())
+        .text("model", model.to_string());
+
+    let endpoint = join_endpoint(&settings.nvidia_base_url, "/v1/audio/transcriptions");
+    let client = reqwest::Client::new();
+    let request = client.post(endpoint).multipart(form);
+    let request = if settings.nvidia_api_key.trim().is_empty() {
+        request
+    } else {
+        request.bearer_auth(settings.nvidia_api_key.trim())
+    };
+
+    let response = request.send().await.map_err(|e| {
+        AppError::Transcription(format!("NVIDIA transcription request failed: {}", e))
+    })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Transcription(format!(
+            "NVIDIA transcription API returned {}: {}",
+            status, body
+        )));
+    }
+
+    let parsed: NvidiaTranscriptionResponse = response
+        .json()
+        .await
+        .map_err(|e| AppError::Transcription(format!("Failed to parse NVIDIA response: {}", e)))?;
+
+    Ok(parsed.text.trim().to_string())
+}
+
+async fn transcribe_alibaba(
+    wav_bytes: &[u8],
+    language: &str,
+    settings: &SpeechApiSettings,
+) -> AppResult<String> {
+    if settings.alibaba_api_key.trim().is_empty() {
+        return Err(AppError::Config(
+            "Alibaba speech requires alibaba_api_key in settings.".into(),
+        ));
+    }
+
+    let endpoint = join_endpoint(&settings.alibaba_base_url, "/chat/completions");
+    let data = base64::engine::general_purpose::STANDARD.encode(wav_bytes);
+    let request = serde_json::json!({
+        "model": "qwen3-asr-flash",
+        "stream": false,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": format!("data:audio/wav;base64,{}", data),
+                            "format": "wav"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": "Transcribe this audio and return only the transcript."
+                    }
+                ]
+            }
+        ],
+        "asr_options": {
+            "language": language
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(endpoint)
+        .bearer_auth(settings.alibaba_api_key.trim())
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| {
+            AppError::Transcription(format!("Alibaba transcription request failed: {}", e))
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Transcription(format!(
+            "Alibaba transcription API returned {}: {}",
+            status, body
+        )));
+    }
+
+    let parsed: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| AppError::Transcription(format!("Failed to parse Alibaba response: {}", e)))?;
+
+    extract_compatible_text(&parsed)
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| AppError::Transcription("Alibaba returned empty transcription.".into()))
+}
+
 async fn transcribe_doubao(
     wav_bytes: &[u8],
     language: &str,
@@ -359,7 +675,9 @@ async fn transcribe_doubao(
 
     let mut ws_request = "wss://openspeech.byteoversea.com/api/v2/asr"
         .into_client_request()
-        .map_err(|e| AppError::Transcription(format!("Failed to build Doubao WS request: {}", e)))?;
+        .map_err(|e| {
+            AppError::Transcription(format!("Failed to build Doubao WS request: {}", e))
+        })?;
     ws_request.headers_mut().insert(
         "Authorization",
         format!("Bearer; {}", settings.doubao_access_token)
@@ -373,18 +691,18 @@ async fn transcribe_doubao(
             .map_err(|e| AppError::Transcription(format!("Invalid user-agent header: {}", e)))?,
     );
 
-    let (mut ws, _resp) = connect_async(ws_request)
-        .await
-        .map_err(|e| AppError::Transcription(format!("Failed to connect Doubao websocket: {}", e)))?;
+    let (mut ws, _resp) = connect_async(ws_request).await.map_err(|e| {
+        AppError::Transcription(format!("Failed to connect Doubao websocket: {}", e))
+    })?;
 
     let payload = serde_json::to_vec(&request)
         .map_err(|e| AppError::Transcription(format!("Failed to encode Doubao request: {}", e)))?;
     let payload = gzip_compress(&payload)?;
     let packet = build_doubao_packet(&payload);
 
-    ws.send(Message::Binary(packet))
-        .await
-        .map_err(|e| AppError::Transcription(format!("Failed to send Doubao websocket request: {}", e)))?;
+    ws.send(Message::Binary(packet)).await.map_err(|e| {
+        AppError::Transcription(format!("Failed to send Doubao websocket request: {}", e))
+    })?;
 
     let mut final_text = String::new();
     while let Some(msg) = ws.next().await {
@@ -404,7 +722,9 @@ async fn transcribe_doubao(
                             return Err(AppError::Transcription(format!(
                                 "Doubao returned error code {}: {}",
                                 code,
-                                parsed.message.unwrap_or_else(|| "unknown error".to_string())
+                                parsed
+                                    .message
+                                    .unwrap_or_else(|| "unknown error".to_string())
                             )));
                         }
                     }
@@ -446,6 +766,38 @@ async fn transcribe_doubao(
     }
 
     Ok(final_text)
+}
+
+fn join_endpoint(base_url: &str, suffix: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    let suffix = suffix.trim_start_matches('/');
+    if trimmed.ends_with(suffix) {
+        trimmed.to_string()
+    } else {
+        format!("{}/{}", trimmed, suffix)
+    }
+}
+
+fn extract_compatible_text(value: &serde_json::Value) -> Option<String> {
+    let content = value.pointer("/choices/0/message/content")?;
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+
+    content.as_array().map(|parts| {
+        parts
+            .iter()
+            .filter_map(|part| {
+                part.get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        part.pointer("/text/value")
+                            .and_then(serde_json::Value::as_str)
+                    })
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    })
 }
 
 fn language_to_bcp47(code: &str) -> &str {

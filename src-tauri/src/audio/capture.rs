@@ -114,9 +114,7 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
     }
 }
 
-fn create_input_stream(
-    buffer: &Arc<Mutex<Vec<f32>>>,
-) -> AppResult<(cpal::Stream, u32)> {
+fn create_input_stream(buffer: &Arc<Mutex<Vec<f32>>>) -> AppResult<(cpal::Stream, u32)> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -195,9 +193,14 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> AppResult<Vec<f32>> 
 
     let chunk_size = 1024;
     let sub_chunks = 2;
-    let mut resampler =
-        FftFixedIn::<f32>::new(from_rate as usize, to_rate as usize, chunk_size, sub_chunks, 1)
-            .map_err(|e| AppError::Audio(format!("Failed to create resampler: {}", e)))?;
+    let mut resampler = FftFixedIn::<f32>::new(
+        from_rate as usize,
+        to_rate as usize,
+        chunk_size,
+        sub_chunks,
+        1,
+    )
+    .map_err(|e| AppError::Audio(format!("Failed to create resampler: {}", e)))?;
 
     let mut output = Vec::new();
     let mut pos = 0;

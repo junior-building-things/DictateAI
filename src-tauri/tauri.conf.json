@@ -23,12 +23,13 @@
       {
         "title": "",
         "label": "overlay",
-        "width": 200,
-        "height": 50,
+        "width": 260,
+        "height": 72,
         "resizable": false,
         "visible": false,
         "decorations": false,
         "transparent": true,
+        "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "center": true,
@@ -47,10 +48,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": {
-      "binaries/llama-cli-aarch64-apple-darwin": "sidecars/llama-cli",
-      "resources/llama-lib/": "llama-lib/"
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

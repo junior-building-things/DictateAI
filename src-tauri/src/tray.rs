@@ -7,12 +7,13 @@ use tauri::{
 use crate::error::AppResult;
 
 pub fn setup(app: &AppHandle) -> AppResult<()> {
-    let settings_item =
-        MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)
-            .map_err(|e| crate::error::AppError::Config(format!("Failed to create menu item: {}", e)))?;
-    let quit_item =
-        MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)
-            .map_err(|e| crate::error::AppError::Config(format!("Failed to create menu item: {}", e)))?;
+    let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)
+        .map_err(|e| {
+            crate::error::AppError::Config(format!("Failed to create menu item: {}", e))
+        })?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).map_err(|e| {
+        crate::error::AppError::Config(format!("Failed to create menu item: {}", e))
+    })?;
 
     let menu = Menu::with_items(app, &[&settings_item, &quit_item])
         .map_err(|e| crate::error::AppError::Config(format!("Failed to create menu: {}", e)))?;

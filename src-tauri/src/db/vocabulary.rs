@@ -18,7 +18,7 @@ pub fn get_all(conn: &Connection) -> AppResult<Vec<VocabularyTerm>> {
     let mut stmt = conn.prepare(
         "SELECT id, term, phonetic, definition, category, use_count, created_at
          FROM vocabulary
-         ORDER BY use_count DESC, term ASC",
+         ORDER BY created_at DESC, term ASC",
     )?;
 
     let terms = stmt

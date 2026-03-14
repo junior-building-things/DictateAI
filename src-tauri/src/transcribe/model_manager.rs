@@ -10,16 +10,37 @@ pub struct ModelInfo {
 pub fn available_models(_language: &str) -> Vec<ModelInfo> {
     vec![
         ModelInfo {
-            name: "gpt-4o-mini-transcribe".into(),
-            label: "Mini".into(),
-            description: "OpenAI model optimized for fast, low-cost transcription.".into(),
+            name: "deepgram-nova-3".into(),
+            label: "Deepgram".into(),
+            description: "Deepgram Nova-3 speech transcription.".into(),
             filename: "".into(),
             size_mb: 0,
         },
         ModelInfo {
-            name: "gpt-4o-transcribe".into(),
-            label: "Plus".into(),
-            description: "OpenAI model with stronger accuracy for difficult audio.".into(),
+            name: "google-chirp-3".into(),
+            label: "Google".into(),
+            description: "Google Chirp 3 speech transcription.".into(),
+            filename: "".into(),
+            size_mb: 0,
+        },
+        ModelInfo {
+            name: "nvidia-parakeet-tdt-0.6b-v2".into(),
+            label: "NVIDIA".into(),
+            description: "NVIDIA-compatible Parakeet TDT 0.6B v2 transcription.".into(),
+            filename: "".into(),
+            size_mb: 0,
+        },
+        ModelInfo {
+            name: "nvidia-canary-qwen-2.5b".into(),
+            label: "NVIDIA".into(),
+            description: "NVIDIA-compatible Canary Qwen 2.5B transcription.".into(),
+            filename: "".into(),
+            size_mb: 0,
+        },
+        ModelInfo {
+            name: "alibaba-qwen3-asr-flash".into(),
+            label: "Alibaba".into(),
+            description: "Alibaba Qwen3 ASR Flash transcription.".into(),
             filename: "".into(),
             size_mb: 0,
         },

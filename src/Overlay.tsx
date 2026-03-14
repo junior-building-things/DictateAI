@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { AudioLines, PenLine } from "lucide-react";
 import { getAppState, getSetting } from "./lib/commands";
 
-type OverlayState = "listening" | "rewriting";
+type OverlayState = "listening" | "processing";
 type AppStatus = "idle" | "recording" | "processing";
 
 export default function Overlay() {
@@ -11,14 +12,14 @@ export default function Overlay() {
 
   useEffect(() => {
     const unlistenState = listen<string>("overlay-state", (event) => {
-      setState(event.payload as OverlayState);
+      setState(event.payload === "listening" ? "listening" : "processing");
     });
     const unlistenAppState = listen<string>("state-changed", (event) => {
       const appState = event.payload as AppStatus;
       if (appState === "recording") {
         setState("listening");
       } else if (appState === "processing") {
-        setState("rewriting");
+        setState("processing");
       }
     });
 
@@ -28,7 +29,7 @@ export default function Overlay() {
         const appState = (await getAppState()) as AppStatus;
         if (cancelled) return;
         if (appState === "processing") {
-          setState("rewriting");
+          setState("processing");
         } else if (appState === "recording") {
           setState("listening");
         }
@@ -58,87 +59,50 @@ export default function Overlay() {
   }, []);
 
   const isListening = state === "listening";
-  const overlayText = getOverlayText(appLanguage, isListening ? "listening" : "rewriting");
+  const listeningText = getOverlayText(appLanguage, "listening");
+  const processingText = getOverlayText(appLanguage, "processing");
 
   return (
-    <div
-      style={{
-        width: "100vw",
-        height: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "transparent",
-        userSelect: "none",
-        WebkitUserSelect: "none",
-        pointerEvents: "none",
-      }}
-    >
-      <div
-        style={{
-          position: "relative",
-          pointerEvents: "none",
-        }}
-      >
-        <div
-          style={{
-            position: "relative",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "10px 20px",
-            borderRadius: "24px",
-            background: "rgba(0, 0, 0, 0.9)",
-            boxShadow:
-              "-16px 0 22px -20px rgba(255, 255, 255, 0.22), 16px 0 22px -20px rgba(255, 255, 255, 0.22)",
-            pointerEvents: "auto",
-          }}
-        >
-          {/* Animated dot */}
-          <div
-            style={{
-              width: "10px",
-              height: "10px",
-              borderRadius: "50%",
-              background: isListening ? "#ef4444" : "#00A2C9",
-              animation: "pulse 1.5s ease-in-out infinite",
-            }}
-          />
+    <div className="flex h-screen w-screen items-center justify-center bg-transparent select-none">
+      <div className="pointer-events-none flex items-center gap-3 rounded-full bg-[#050505]/95 px-5 py-3">
+        <div>
+          {isListening ? (
+            <AudioLines className="overlay-audio-lines h-4 w-4 text-blue-500" />
+          ) : (
+            <PenLine className="overlay-rewrite-pen h-4 w-4 text-blue-500" />
+          )}
+        </div>
+        <div className="grid">
           <span
-            style={{
-              color: "rgba(255, 255, 255, 0.9)",
-              fontSize: "14px",
-              fontWeight: 500,
-              fontFamily:
-                '"SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
-              letterSpacing: "-0.01em",
-            }}
+            className={`col-start-1 row-start-1 text-sm font-medium text-white ${
+              isListening ? "visible" : "invisible"
+            }`}
           >
-            {overlayText}
+            {listeningText}
+          </span>
+          <span
+            className={`col-start-1 row-start-1 text-sm font-medium text-white ${
+              isListening ? "invisible" : "visible"
+            }`}
+          >
+            {processingText}
           </span>
         </div>
       </div>
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.85); }
-        }
-      `}</style>
     </div>
   );
 }
 
-function getOverlayText(language: string, state: "listening" | "rewriting"): string {
+function getOverlayText(language: string, state: OverlayState): string {
   const text = {
-    en: { listening: "Listening...", rewriting: "Rewriting..." },
-    es: { listening: "Escuchando...", rewriting: "Reescribiendo..." },
-    fr: { listening: "Ecoute...", rewriting: "Reecriture..." },
-    de: { listening: "Hoere zu...", rewriting: "Umschreiben..." },
-    ja: { listening: "聞き取り中...", rewriting: "書き換え中..." },
-    zh: { listening: "正在听取...", rewriting: "正在改写..." },
-    sv: { listening: "Lyssnar...", rewriting: "Skriver om..." },
-    fi: { listening: "Kuunnellaan...", rewriting: "Muokataan..." },
+    en: { listening: "Listening...", processing: "Rewriting..." },
+    es: { listening: "Escuchando...", processing: "Reescribiendo..." },
+    fr: { listening: "Ecoute...", processing: "Reecriture..." },
+    de: { listening: "Hoere zu...", processing: "Schreibe um..." },
+    ja: { listening: "聞き取り中...", processing: "書き換え中..." },
+    zh: { listening: "正在听取...", processing: "正在改写..." },
+    sv: { listening: "Lyssnar...", processing: "Skriver om..." },
+    fi: { listening: "Kuunnellaan...", processing: "Muokataan..." },
   } as const;
 
   const lang = language as keyof typeof text;

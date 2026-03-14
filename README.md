@@ -5,7 +5,7 @@ Desktop app for push-to-talk transcription with optional Gemini cleanup and auto
 ## What it does
 
 - Hold a global hotkey to record microphone audio.
-- Release to transcribe locally with Whisper (`whisper-rs`).
+- Release to transcribe with the configured speech API provider.
 - Optionally rewrite text with Gemini using strict cleanup rules.
 - Save raw and rewritten text to SQLite history.
 - Copy to clipboard and auto-paste into the active app (when accessibility permission is granted).
@@ -47,9 +47,8 @@ npm run tauri build
 ## First-time setup in app
 
 1. Open the app settings window.
-2. In `Model`, download a Whisper model (`tiny.en`, `base.en`, or `small.en`).
-3. In `API Key`, add Gemini API key (optional, used for rewrite only).
-4. Use and hold hotkey (default: `CommandOrControl+Shift+Space`) to record.
+2. In `Models`, add the API keys required for your selected speech and rewrite providers.
+3. Use and hold hotkey (default: `CommandOrControl+Shift+Space`) to record.
 
 ## Permissions (macOS)
 
@@ -70,12 +69,10 @@ App data directory contains:
   - `settings`
   - `vocabulary`
   - `transcription_history`
-- `models/` downloaded Whisper model files
 
 ## Key settings
 
 - `hotkey`
-- `whisper_model`
 - `language`
 - `gemini_api_key`
 - `auto_paste`
