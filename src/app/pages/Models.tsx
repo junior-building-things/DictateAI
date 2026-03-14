@@ -310,7 +310,7 @@ export const Models = () => {
 
         <MetricsRow metrics={selectedSpeechModel.metrics} firstLabel="Latency" middleLabel="Accuracy" />
 
-        <div className="rounded-xl border border-white/[0.08] bg-black/30 p-5">
+        <div>
           {renderSpeechCredentials({
             provider: models.speechProvider,
             deepgramKey,
@@ -380,7 +380,7 @@ export const Models = () => {
 
         <MetricsRow metrics={selectedRewriteModel.metrics} firstLabel="TFTT" middleLabel="Throughput" />
 
-        <div className="rounded-xl border border-white/[0.08] bg-black/30 p-5">
+        <div>
           {renderRewriteCredentials({
             provider: models.rewriteProvider,
             openAiKey,

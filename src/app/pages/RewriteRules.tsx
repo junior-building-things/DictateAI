@@ -86,7 +86,7 @@ export const RewriteRules = () => {
         </section>
 
         <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
-          <div className="flex items-center justify-between gap-6 border-b border-white/[0.06] pb-6">
+          <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
                 <BookText className="h-5 w-5 text-blue-500" />
