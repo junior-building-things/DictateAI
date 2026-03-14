@@ -63,6 +63,10 @@ pub fn prompt_accessibility_permission() {
 pub fn prompt_microphone_permission() {
     #[cfg(target_os = "macos")]
     {
+        if macos_microphone_permission_state() == "granted" {
+            return;
+        }
+
         let _ = std::process::Command::new("/usr/bin/open")
             .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
             .spawn();
