@@ -140,8 +140,8 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 28px;
   background:
-    linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(15, 23, 42, 0.38)),
-    rgba(4, 9, 18, 0.72);
+    linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(15, 23, 42, 0.12)),
+    #091321;
   box-shadow: var(--shadow);
 }
 
@@ -241,7 +241,9 @@ h2 {
 .info-card {
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: var(--panel);
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.02)),
+    #0a1422;
 }
 
 .feature-grid {
