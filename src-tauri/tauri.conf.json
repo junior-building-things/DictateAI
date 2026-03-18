@@ -50,7 +50,7 @@
       "endpoints": [
         "https://github.com/junior-building-things/DictateAI/releases/latest/download/latest.json"
       ],
-      "pubkey": "untrusted comment: minisign public key: 5C70F09DB22C42B8\nRWS4QiyynfBwXILFpT6h/jxw/9Q9jWFZNhbFT5zzjSvyFcwSeBKot8Dy"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzOThDM0YyOTM3REI2OTMKUldTVHRuMlQ4c09ZMHg5b1NNa1I3NE1QTC9SSEhCS0RaQ1plSk9ScU1xT3dkNzNJSitaRW02ZQo="
     }
   },
   "bundle": {
