@@ -1,19 +1,13 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
-import { BookText, Cpu, History, Home, Mic2, Wand2 } from "lucide-react";
+import { BookText, Cpu, Globe, History, Home, Mic2, Wand2 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { checkAccessibility } from "../../lib/commands";
+import { checkAccessibility, getSettings } from "../../lib/commands";
+import { useI18n } from "../../lib/i18n";
+import { type ModelsState, useAppStore } from "../../lib/store";
 import { getMicrophonePermissionState } from "../../lib/ui";
 import { DictationProvider } from "../../lib/useDictation";
 import { cn } from "../../lib/utils";
-
-const sidebarItems = [
-  { icon: Home, label: "Home", path: "/" },
-  { icon: Cpu, label: "Models", path: "/models" },
-  { icon: Wand2, label: "Rewrite Rules", path: "/rewrite-rules" },
-  { icon: BookText, label: "Vocabulary", path: "/vocabulary" },
-  { icon: History, label: "History", path: "/history" },
-];
 
 export const Layout = () => {
   return (
@@ -25,40 +19,66 @@ export const Layout = () => {
 
 const LayoutInner = () => {
   const location = useLocation();
+  const { t } = useI18n();
+  const { models } = useAppStore();
   const [microphoneGranted, setMicrophoneGranted] = useState(false);
   const [accessibilityGranted, setAccessibilityGranted] = useState(false);
+  const [missingApiKeys, setMissingApiKeys] = useState(false);
+  const sidebarItems = [
+    { icon: Home, label: t("navHome"), path: "/" },
+    { icon: Globe, label: t("navLanguages"), path: "/languages" },
+    { icon: Cpu, label: t("navModels"), path: "/models" },
+    { icon: Wand2, label: t("navRewriteRules"), path: "/rewrite-rules" },
+    { icon: BookText, label: t("navVocabulary"), path: "/vocabulary" },
+    { icon: History, label: t("navHistory"), path: "/history" },
+  ];
 
-  const syncPermissions = useCallback(async () => {
-    const [microphoneState, accessibilityState] = await Promise.all([
+  const syncStatus = useCallback(async () => {
+    const [microphoneState, accessibilityState, settingsEntries] = await Promise.all([
       getMicrophonePermissionState().catch(() => "unknown"),
       checkAccessibility().catch(() => false),
+      getSettings().catch(() => null as [string, string][] | null),
     ]);
 
     setMicrophoneGranted(microphoneState === "granted");
     setAccessibilityGranted(accessibilityState === true);
-  }, []);
+    if (settingsEntries) {
+      setMissingApiKeys(hasMissingApiKeys(models, new Map(settingsEntries)));
+    }
+  }, [models]);
 
   useEffect(() => {
-    void syncPermissions();
+    void syncStatus();
 
-    const handleFocus = () => {
-      void syncPermissions();
+    const handleStatusRefresh = () => {
+      void syncStatus();
     };
 
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleStatusRefresh);
+    document.addEventListener("visibilitychange", handleStatusRefresh);
+    window.addEventListener("dictateai-settings-changed", handleStatusRefresh);
 
     return () => {
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleStatusRefresh);
+      document.removeEventListener("visibilitychange", handleStatusRefresh);
+      window.removeEventListener("dictateai-settings-changed", handleStatusRefresh);
     };
-  }, [syncPermissions]);
+  }, [syncStatus]);
 
   const isReady = microphoneGranted && accessibilityGranted;
-  const footerLabel = isReady ? "READY" : "PERMISSION NEEDED";
-  const footerDescription = isReady
-    ? "Trigger the hotkey to start dictating."
-    : "Enable microphone and accessibility permissions.";
+  const footerStatus = missingApiKeys ? "api" : isReady ? "ready" : "permissions";
+  const footerLabel =
+    footerStatus === "ready"
+      ? t("statusReady")
+      : footerStatus === "api"
+        ? t("statusApiKeyMissing")
+        : t("statusPermissionNeeded");
+  const footerDescription =
+    footerStatus === "ready"
+      ? t("statusReadyDesc")
+      : footerStatus === "api"
+        ? t("statusApiKeyMissingDesc")
+        : t("statusPermissionNeededDesc");
 
   return (
     <div className="flex h-screen bg-[#0A0A0A] text-[#E5E5E5] font-sans selection:bg-blue-500/30 selection:text-blue-200">
@@ -111,7 +131,7 @@ const LayoutInner = () => {
             <div
               className={cn(
                 "h-2 w-2 rounded-full",
-                isReady
+                footerStatus === "ready"
                   ? "bg-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.5)]"
                   : "bg-neutral-500 shadow-[0_0_8px_rgba(115,115,115,0.35)]",
               )}
@@ -126,7 +146,7 @@ const LayoutInner = () => {
         </div>
       </aside>
 
-      <main className="relative flex-1 overflow-y-auto bg-[#0A0A0A]">
+      <main className="flex-1 overflow-y-auto bg-[#0A0A0A]">
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
@@ -134,9 +154,21 @@ const LayoutInner = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="h-full"
+            className="relative min-h-full"
           >
-            <div className="mx-auto max-w-4xl p-12">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 opacity-48 [background-image:radial-gradient(circle,rgba(255,255,255,0.2)_1.1px,transparent_1.1px)] [background-size:19px_19px]"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-black/18"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.045),transparent_68%)]"
+            />
+            <div className="relative z-10 mx-auto max-w-4xl p-12">
               <Outlet />
             </div>
           </motion.div>
@@ -146,3 +178,34 @@ const LayoutInner = () => {
     </div>
   );
 };
+
+function hasMissingApiKeys(models: ModelsState, settings: Map<string, string>) {
+  return !hasSpeechApiKey(models, settings) || !hasRewriteApiKey(models, settings);
+}
+
+function hasSpeechApiKey(models: ModelsState, settings: Map<string, string>) {
+  switch (models.speechProvider) {
+    case "Deepgram":
+      return Boolean(settings.get("speech_deepgram_api_key")?.trim());
+    case "Google":
+      return Boolean(
+        settings.get("speech_google_api_key")?.trim()
+          && settings.get("speech_google_project_id")?.trim(),
+      );
+    case "OpenAI":
+      return Boolean(settings.get("speech_openai_api_key")?.trim());
+    case "Alibaba":
+      return Boolean(settings.get("alibaba_api_key")?.trim());
+  }
+}
+
+function hasRewriteApiKey(models: ModelsState, settings: Map<string, string>) {
+  switch (models.rewriteProvider) {
+    case "OpenAI":
+      return Boolean(settings.get("speech_openai_api_key")?.trim());
+    case "Google":
+      return Boolean(settings.get("gemini_api_key")?.trim());
+    case "Alibaba":
+      return Boolean(settings.get("alibaba_api_key")?.trim());
+  }
+}

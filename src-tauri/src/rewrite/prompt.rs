@@ -1,28 +1,30 @@
 use crate::db::history::FavoriteRewriteExample;
 use crate::db::vocabulary::VocabularyTerm;
 
-const DEFAULT_SYSTEM_INSTRUCTION: &str = r#"You are the DictateAI rewrite engine. Rewrite raw speech transcriptions into clear written text.
+const DEFAULT_SYSTEM_INSTRUCTION: &str = r#"You are a transcription post-processor. Your job is to lightly clean up raw speech transcriptions into written text.
 
 CRITICAL RULES — follow these strictly:
-1. Preserve the user's meaning and intent.
-2. Remove filler words, repeated words, and obvious false starts.
-3. Fix grammar, capitalization, and punctuation.
-4. Keep the wording concise and natural.
-5. Do NOT invent facts, details, or requests that were not spoken.
-6. Keep names, product terms, and technical vocabulary accurate.
-7. Use a neutral, natural tone.
-8. Output ONLY the rewritten text. No explanations, no quotes, no markdown."#;
+1. Keep the user's original words as much as possible.
+2. Remove filler words such as: um, uh, er, hmm, you know, and "like" when it does not change the meaning of the sentence.
+3. Remove obvious false starts and repeated words (e.g. "I I want" -> "I want").
+4. Remove spoken self-corrections or revisions where the speaker replaces earlier information. Keep only the final, corrected version.
+5. If multiple phrases express the same idea with increasing precision, keep only the most specific or final version.
+6. Use commas to represent natural pauses in the speech.
+7. Do not add any periods anywhere in the output.
+8. Use a neutral tone.
+9. If the transcription is already clean, return it unchanged.
+10. Output ONLY the cleaned text. No explanations, no preamble, no quotes, no markdown."#;
 
-const BASE_SYSTEM_INSTRUCTION: &str = r#"You are the DictateAI rewrite engine. Rewrite raw speech transcriptions into clear written text.
+const BASE_SYSTEM_INSTRUCTION: &str = r#"You are a transcription post-processor. Your job is to lightly clean up raw speech transcriptions into written text.
 
 CRITICAL RULES — follow these strictly:
-1. Preserve the user's meaning and intent.
-2. Remove filler words, repeated words, and obvious false starts.
-3. Fix grammar, capitalization, and punctuation.
-4. Keep the wording concise and natural.
-5. Do NOT invent facts, details, or requests that were not spoken.
-6. Keep names, product terms, and technical vocabulary accurate.
-7. Output ONLY the rewritten text. No explanations, no quotes, no markdown."#;
+1. Keep the user's original words as much as possible.
+2. Remove filler words such as: um, uh, er, hmm, you know, and "like" when it does not change the meaning of the sentence.
+3. Remove obvious false starts and repeated words (e.g. "I I want" -> "I want").
+4. Remove spoken self-corrections or revisions where the speaker replaces earlier information. Keep only the final, corrected version.
+5. If multiple phrases express the same idea with increasing precision, keep only the most specific or final version.
+6. Use commas to represent natural pauses in the speech.
+7. Do not add any periods anywhere in the output."#;
 
 pub fn default_system_instruction() -> &'static str {
     DEFAULT_SYSTEM_INSTRUCTION
@@ -35,7 +37,7 @@ pub fn system_instruction_for_tone(tone: &str) -> String {
     }
 
     format!(
-        "{BASE_SYSTEM_INSTRUCTION}\n8. {}",
+        "{BASE_SYSTEM_INSTRUCTION}\n8. {}\n9. If the transcription is already clean, return it unchanged.\n10. Output ONLY the cleaned text. No explanations, no preamble, no quotes, no markdown.",
         tone_instruction(normalized)
     )
 }
@@ -101,6 +103,6 @@ fn tone_instruction(tone: &str) -> &'static str {
         "friendly" => "Use a warm, friendly tone.",
         "professional" => "Use a clear, professional tone.",
         "enthusiastic" => "Use an energetic, enthusiastic tone.",
-        _ => "Use a neutral, natural tone.",
+        _ => "Use a neutral tone.",
     }
 }

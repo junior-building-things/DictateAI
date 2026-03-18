@@ -15,86 +15,84 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { cn } from "../../lib/utils";
 import { rewriteToneOptions, type RewriteTone } from "../../lib/store";
 
 export const RewriteRules = () => {
+  const { t } = useI18n();
   const { rewriteRules, setRewriteRules } = useAppStore();
   const hasCustomPromptText = rewriteRules.customPrompt.trim().length > 0;
 
   const handleToggleCustomPrompt = () => {
     if (!hasCustomPromptText) {
-      toast.error("Add a custom prompt first.");
+      toast.error(t("addCustomPromptFirst"));
       return;
     }
 
     const nextValue = !rewriteRules.useCustomPrompt;
     void setRewriteRules({ useCustomPrompt: nextValue });
-    toast.info(nextValue ? "Custom prompt enabled." : "Custom prompt disabled.");
+    toast.info(nextValue ? t("customPromptEnabledToast") : t("customPromptDisabledToast"));
   };
 
   const handleToggleFavorites = () => {
     const nextValue = !rewriteRules.useFavorites;
     void setRewriteRules({ useFavorites: nextValue });
-    toast.info(nextValue ? "Favorites enabled." : "Favorites disabled.");
+    toast.info(nextValue ? t("favoritesEnabledToast") : t("favoritesDisabledToast"));
   };
 
   const handleToggleVocabulary = () => {
     const nextValue = !rewriteRules.useVocabulary;
     void setRewriteRules({ useVocabulary: nextValue });
-    toast.info(nextValue ? "Vocabulary enabled." : "Vocabulary disabled.");
+    toast.info(nextValue ? t("vocabularyEnabledToast") : t("vocabularyDisabledToast"));
   };
 
   const handleToneChange = (tone: RewriteTone) => {
     void setRewriteRules({ tone });
-    toast.info(`Rewrite tone updated to ${toneLabel(tone)}.`);
+    toast.info(t("rewriteToneUpdatedToast", { tone: toneLabel(t, tone) }));
   };
 
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-white">Rewrite Rules</h1>
-        <p className="text-neutral-400">
-          Customize how DictateAI cleans and rephrases your spoken words.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight text-white">{t("navRewriteRules")}</h1>
+        <p className="text-neutral-400">{t("rewriteRulesSubtitle")}</p>
       </header>
 
       <div className="grid grid-cols-1 gap-8">
-        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
-          <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
+        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
+          <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
               <TextQuote className="h-5 w-5 text-blue-500" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-white">Rewrite Tone</h2>
+              <h2 className="text-xl font-semibold text-white">{t("rewriteToneTitle")}</h2>
               <p className="text-sm text-neutral-500">
-                Choose the tone used when DictateAI rewrites your text.
+                {t("rewriteToneDescription")}
               </p>
             </div>
           </div>
 
-          <div className="space-y-4 pt-4">
-            <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-              Tone
-            </label>
+          <div>
             <ToneSelect
+              t={t}
               value={rewriteRules.tone}
               onChange={handleToneChange}
             />
           </div>
         </section>
 
-        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
           <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
                 <BookText className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-white">Use Vocabulary</h2>
+                <h2 className="text-xl font-semibold text-white">{t("useVocabularyTitle")}</h2>
                 <p className="text-sm text-neutral-500">
-                  Use your saved terms to keep names, pronunciations, and terminology accurate.
+                  {t("useVocabularyDescription")}
                 </p>
               </div>
             </div>
@@ -116,16 +114,16 @@ export const RewriteRules = () => {
           </div>
         </section>
 
-        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
           <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
                 <Star className="h-5 w-5 fill-current text-blue-400" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-white">Use Favorites</h2>
+                <h2 className="text-xl font-semibold text-white">{t("useFavoritesTitle")}</h2>
                 <p className="text-sm text-neutral-500">
-                  Reference your starred history items as rewrite examples.
+                  {t("useFavoritesDescription")}
                 </p>
               </div>
             </div>
@@ -147,16 +145,16 @@ export const RewriteRules = () => {
           </div>
         </section>
 
-        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+        <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
           <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
                 <Wand2 className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-white">Use Custom Prompt</h2>
+                <h2 className="text-xl font-semibold text-white">{t("useCustomPromptTitle")}</h2>
                 <p className="text-sm text-neutral-500">
-                  Add specific instructions for how DictateAI should rewrite your text.
+                  {t("useCustomPromptDescription")}
                 </p>
               </div>
             </div>
@@ -181,7 +179,7 @@ export const RewriteRules = () => {
 
           <div className="space-y-4">
             <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-              Custom Prompt
+              {t("customPromptLabel")}
             </label>
             <textarea
               value={rewriteRules.customPrompt}
@@ -196,7 +194,7 @@ export const RewriteRules = () => {
                 });
               }}
               className="h-56 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-sm text-neutral-300 transition-all placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-              placeholder="You are a transcription post-processor. Your job is to clean up raw speech..."
+              placeholder={t("customPromptPlaceholder")}
             />
           </div>
         </section>
@@ -206,9 +204,11 @@ export const RewriteRules = () => {
 };
 
 const ToneSelect = ({
+  t,
   value,
   onChange,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
   value: RewriteTone;
   onChange: (value: RewriteTone) => void;
 }) => {
@@ -223,7 +223,7 @@ const ToneSelect = ({
       >
         <div className="flex min-w-0 items-center gap-2">
           <ToneIcon tone={value} className="h-4 w-4 shrink-0 text-blue-400" />
-          <span className="truncate capitalize">{toneLabel(value)}</span>
+          <span className="truncate">{toneLabel(t, value)}</span>
         </div>
         <ChevronDown
           className={cn("h-4 w-4 text-neutral-500 transition-transform", isOpen && "rotate-180")}
@@ -251,7 +251,7 @@ const ToneSelect = ({
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <ToneIcon tone={tone} className="h-4 w-4 shrink-0 text-blue-400" />
-                    <span className="truncate capitalize">{toneLabel(tone)}</span>
+                    <span className="truncate">{toneLabel(t, tone)}</span>
                   </div>
                   {value === tone ? <Check className="h-4 w-4 text-blue-500" /> : null}
                 </button>
@@ -283,6 +283,14 @@ function ToneIcon({
   return <Icon className={className} />;
 }
 
-function toneLabel(tone: RewriteTone) {
-  return tone.charAt(0).toUpperCase() + tone.slice(1);
+function toneLabel(t: ReturnType<typeof useI18n>["t"], tone: RewriteTone) {
+  const keyMap: Record<RewriteTone, Parameters<typeof t>[0]> = {
+    neutral: "toneNeutral",
+    casual: "toneCasual",
+    friendly: "toneFriendly",
+    professional: "toneProfessional",
+    enthusiastic: "toneEnthusiastic",
+  };
+
+  return t(keyMap[tone]);
 }

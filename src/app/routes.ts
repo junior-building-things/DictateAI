@@ -5,6 +5,7 @@ import { Home } from "./pages/Home";
 import { Models } from "./pages/Models";
 import { RewriteRules } from "./pages/RewriteRules";
 import { Vocabulary } from "./pages/Vocabulary";
+import { Languages } from "./pages/Languages";
 
 export const router = createBrowserRouter([
   {
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
     Component: Layout,
     children: [
       { index: true, Component: Home },
+      { path: "languages", Component: Languages },
       { path: "models", Component: Models },
       { path: "rewrite-rules", Component: RewriteRules },
       { path: "vocabulary", Component: Vocabulary },

@@ -9,6 +9,7 @@ pub const STATE_PROCESSING: u8 = 2;
 
 pub struct AppState {
     pub db: Mutex<Connection>,
+    pub http_client: reqwest::Client,
     pub recording_state: AtomicU8,
     pub run_generation: AtomicU64,
 }
@@ -17,6 +18,7 @@ impl AppState {
     pub fn new(db: Connection) -> Self {
         Self {
             db: Mutex::new(db),
+            http_client: reqwest::Client::new(),
             recording_state: AtomicU8::new(STATE_IDLE),
             run_generation: AtomicU64::new(0),
         }

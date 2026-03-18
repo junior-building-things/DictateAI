@@ -1,5 +1,5 @@
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::time::{sleep, timeout, Duration, Instant};
+use tokio::time::{timeout, Duration, Instant};
 
 use crate::audio::feedback;
 use crate::db::{history, settings, vocabulary};
@@ -16,7 +16,6 @@ const API_REWRITE_TIMEOUT_SECONDS: u64 = 10;
 
 pub async fn run(app: AppHandle, audio_data: Vec<f32>) -> AppResult<()> {
     let state = app.state::<AppState>();
-    let processing_started_at = Instant::now();
     let run_id = state.begin_processing_run();
 
     // Set state to processing
@@ -27,15 +26,6 @@ pub async fn run(app: AppHandle, audio_data: Vec<f32>) -> AppResult<()> {
     crate::overlay::show(&app, "rewriting");
 
     let result = run_inner(&app, &state, audio_data, run_id).await;
-
-    if state.is_run_current(run_id) {
-        // Prevent UI flicker when processing finishes very quickly.
-        let min_display = Duration::from_millis(450);
-        let elapsed = processing_started_at.elapsed();
-        if elapsed < min_display {
-            sleep(min_display - elapsed).await;
-        }
-    }
 
     // Only the active run should own overlay cleanup.
     if state.is_run_current(run_id) {
@@ -92,7 +82,8 @@ async fn run_inner(
     let (selected_speech_model, speech_settings) = {
         let db = state.db.lock().unwrap();
         (
-            settings::get(&db, "speech_model").unwrap_or_else(|_| "deepgram-nova-3".into()),
+            settings::get(&db, "speech_model")
+                .unwrap_or_else(|_| "gpt-4o-mini-transcribe".into()),
             SpeechApiSettings {
                 deepgram_api_key: settings::get(&db, "speech_deepgram_api_key").unwrap_or_default(),
                 openai_api_key: settings::get(&db, "speech_openai_api_key").unwrap_or_default(),
@@ -120,6 +111,7 @@ async fn run_inner(
     let raw_text = timeout(
         Duration::from_secs(API_SPEECH_TIMEOUT_SECONDS),
         speech_api::transcribe(
+            &state.http_client,
             &audio_data,
             &language,
             &selected_speech_model,
@@ -257,6 +249,7 @@ async fn run_inner(
                 match timeout(
                     Duration::from_secs(API_REWRITE_TIMEOUT_SECONDS),
                     openai::rewrite(
+                        &state.http_client,
                         &openai_api_key,
                         &rewrite_model,
                         &system_prompt,
@@ -300,6 +293,7 @@ async fn run_inner(
                 match timeout(
                     Duration::from_secs(API_REWRITE_TIMEOUT_SECONDS),
                     gemini::rewrite(
+                        &state.http_client,
                         &gemini_api_key,
                         &rewrite_model,
                         &system_prompt,
@@ -343,6 +337,7 @@ async fn run_inner(
                 match timeout(
                     Duration::from_secs(API_REWRITE_TIMEOUT_SECONDS),
                     alibaba::rewrite(
+                        &state.http_client,
                         &alibaba_api_key,
                         &alibaba_base_url,
                         &rewrite_model,

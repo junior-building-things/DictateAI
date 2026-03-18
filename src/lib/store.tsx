@@ -10,6 +10,8 @@ import {
   updateHotkey,
 } from "./commands";
 import {
+  DEFAULT_REWRITE_PROVIDER,
+  DEFAULT_SPEECH_PROVIDER,
   defaultRewriteModel,
   defaultSpeechModel,
   normalizeRewriteProvider,
@@ -90,10 +92,10 @@ const defaultRewriteRules: RewriteRulesState = {
 };
 
 const defaultModels: ModelsState = {
-  speechProvider: "Deepgram",
-  speechModel: defaultSpeechModel("Deepgram"),
-  rewriteProvider: "Google",
-  rewriteModel: defaultRewriteModel("Google"),
+  speechProvider: DEFAULT_SPEECH_PROVIDER,
+  speechModel: defaultSpeechModel(DEFAULT_SPEECH_PROVIDER),
+  rewriteProvider: DEFAULT_REWRITE_PROVIDER,
+  rewriteModel: defaultRewriteModel(DEFAULT_REWRITE_PROVIDER),
 };
 
 const defaultHotkeySettings: HotkeyState = {

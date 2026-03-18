@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import {
   Calendar,
   Check,
@@ -11,10 +10,12 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { cn } from "../../lib/utils";
 
 export const History = () => {
+  const { t } = useI18n();
   const { history, toggleFavorite, deleteHistoryItem, updateHistoryRewritten } = useAppStore();
   const [search, setSearch] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -47,7 +48,7 @@ export const History = () => {
   const saveEdit = () => {
     if (editingId !== null && editValue.trim()) {
       void updateHistoryRewritten(editingId, editValue.trim());
-      toast.info("Rewrite updated.");
+      toast.info(t("rewriteUpdated"));
     }
     setEditingId(null);
     setEditValue("");
@@ -62,8 +63,8 @@ export const History = () => {
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-white">History</h1>
-          <p className="text-neutral-400">Review and edit recent dictations.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-white">{t("navHistory")}</h1>
+          <p className="text-neutral-400">{t("historySubtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -72,13 +73,13 @@ export const History = () => {
               "flex h-10 w-10 items-center justify-center rounded-lg border transition-all",
               showFavoritesOnly
                 ? "border-amber-500/30 bg-amber-500/10 text-amber-500"
-                : "border-white/[0.06] bg-white/[0.03] text-neutral-400 hover:bg-white/[0.05] hover:text-white",
+                : "border-white/[0.06] bg-[#161616] text-neutral-400 hover:bg-[#1b1b1b] hover:text-white",
             )}
           >
             <Star className={cn("h-4 w-4", showFavoritesOnly && "fill-current")} />
           </button>
           {isSearchOpen ? (
-            <div className="flex h-10 items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-neutral-400 transition-all">
+            <div className="flex h-10 items-center gap-2 rounded-lg border border-white/[0.06] bg-[#161616] px-3 text-neutral-400 transition-all">
               <Search className="h-4 w-4 shrink-0" />
               <input
                 ref={searchInputRef}
@@ -90,7 +91,7 @@ export const History = () => {
                     setIsSearchOpen(false);
                   }
                 }}
-                placeholder="Search history..."
+                placeholder={t("searchHistoryPlaceholder")}
                 className="w-44 bg-transparent text-sm text-white placeholder:text-neutral-600 focus:outline-none"
               />
               <button
@@ -106,7 +107,7 @@ export const History = () => {
           ) : (
             <button
               onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] text-neutral-400 transition-all hover:bg-white/[0.05] hover:text-white"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.06] bg-[#161616] text-neutral-400 transition-all hover:bg-[#1b1b1b] hover:text-white"
             >
               <Search className="h-4 w-4" />
             </button>
@@ -115,19 +116,14 @@ export const History = () => {
       </header>
 
       <div className="space-y-8">
-        <AnimatePresence mode="popLayout">
-          {filteredItems.map((item) => {
-            const isEditing = editingId === item.id;
+        {filteredItems.map((item) => {
+          const isEditing = editingId === item.id;
 
-            return (
-              <motion.div
-                key={item.id}
-                layout
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.98 }}
-                className="group rounded-2xl border border-white/[0.04] bg-white/[0.02] p-6 transition-all duration-300 hover:border-white/[0.08] hover:bg-white/[0.03] hover:shadow-xl hover:shadow-black/20"
-              >
+          return (
+            <div
+              key={item.id}
+              className="group rounded-2xl border border-white/[0.06] bg-[#121212] p-6 transition-all duration-300 hover:border-white/[0.1] hover:bg-[#171717] hover:shadow-xl hover:shadow-black/20"
+            >
                 <div className="mb-4 flex items-start justify-between">
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5 rounded-md bg-white/[0.05] px-2 py-1">
@@ -149,8 +145,8 @@ export const History = () => {
                         toggleFavorite(item.id);
                         toast.info(
                           item.favorited
-                            ? "Dictation removed from favorites."
-                            : "Dictation added to favorites.",
+                            ? t("dictationRemovedFromFavorites")
+                            : t("dictationAddedToFavorites"),
                         );
                       }}
                       className={cn(
@@ -165,7 +161,7 @@ export const History = () => {
                     <button
                       onClick={() => {
                         void deleteHistoryItem(item.id);
-                        toast.info("Deleted from history.");
+                        toast.info(t("deletedFromHistory"));
                       }}
                       className="rounded-lg p-2 text-neutral-500 transition-all hover:bg-red-500/10 hover:text-red-500"
                     >
@@ -177,7 +173,7 @@ export const History = () => {
                 <div className="space-y-4">
                   <div className="space-y-1">
                     <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                      Spoken
+                      {t("spokenLabel")}
                     </p>
                     <p className="text-sm font-medium italic leading-relaxed text-neutral-400">
                       &quot;{item.original}&quot;
@@ -185,7 +181,7 @@ export const History = () => {
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-bold uppercase tracking-wider text-blue-500">
-                      Rewritten
+                      {t("rewrittenLabel")}
                     </p>
                     {isEditing ? (
                       <textarea
@@ -220,14 +216,14 @@ export const History = () => {
                         className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-neutral-400 transition-colors hover:bg-white/[0.05] hover:text-white"
                       >
                         <X className="h-4 w-4" />
-                        Cancel
+                        {t("cancel")}
                       </button>
                       <button
                         onClick={saveEdit}
                         className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500"
                       >
                         <Check className="h-4 w-4" />
-                        Save
+                        {t("save")}
                       </button>
                     </>
                   ) : (
@@ -237,19 +233,18 @@ export const History = () => {
                         className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500"
                       >
                         <Pencil className="h-4 w-4" />
-                        Edit
+                        {t("edit")}
                       </button>
                     </>
                   )}
                 </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+            </div>
+          );
+        })}
 
         {filteredItems.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-sm text-neutral-500">No history items found.</p>
+            <p className="text-sm text-neutral-500">{t("noHistoryItemsFound")}</p>
           </div>
         ) : null}
       </div>

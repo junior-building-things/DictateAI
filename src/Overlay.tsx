@@ -20,6 +20,8 @@ export default function Overlay() {
         setState("listening");
       } else if (appState === "processing") {
         setState("processing");
+      } else {
+        setState("listening");
       }
     });
 
@@ -30,7 +32,7 @@ export default function Overlay() {
         if (cancelled) return;
         if (appState === "processing") {
           setState("processing");
-        } else if (appState === "recording") {
+        } else {
           setState("listening");
         }
       } catch {
@@ -96,13 +98,9 @@ export default function Overlay() {
 function getOverlayText(language: string, state: OverlayState): string {
   const text = {
     en: { listening: "Listening...", processing: "Rewriting..." },
-    es: { listening: "Escuchando...", processing: "Reescribiendo..." },
-    fr: { listening: "Ecoute...", processing: "Reecriture..." },
-    de: { listening: "Hoere zu...", processing: "Schreibe um..." },
-    ja: { listening: "聞き取り中...", processing: "書き換え中..." },
     zh: { listening: "正在听取...", processing: "正在改写..." },
     sv: { listening: "Lyssnar...", processing: "Skriver om..." },
-    fi: { listening: "Kuunnellaan...", processing: "Muokataan..." },
+    fi: { listening: "Kuunnellaan...", processing: "Kirjoitetaan uudelleen..." },
   } as const;
 
   const lang = language as keyof typeof text;

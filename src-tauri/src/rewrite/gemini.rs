@@ -68,6 +68,7 @@ struct GeminiError {
 }
 
 pub async fn rewrite(
+    client: &reqwest::Client,
     api_key: &str,
     model: &str,
     system_prompt: &str,
@@ -113,7 +114,6 @@ pub async fn rewrite(
         GEMINI_API_URL_PREFIX, api_model, api_key
     );
 
-    let client = reqwest::Client::new();
     let response = client
         .post(&url)
         .json(&request)
@@ -154,8 +154,9 @@ pub async fn rewrite(
     Ok(text)
 }
 
-pub async fn validate_api_key(api_key: &str, model: &str) -> AppResult<()> {
+pub async fn validate_api_key(client: &reqwest::Client, api_key: &str, model: &str) -> AppResult<()> {
     let _ = rewrite(
+        client,
         api_key,
         model,
         "You are a validator. Reply with exactly: OK",

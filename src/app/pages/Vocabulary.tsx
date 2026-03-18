@@ -7,6 +7,7 @@ import {
   getVocabulary,
   updateVocabularyTerm,
 } from "../../lib/commands";
+import { useI18n } from "../../lib/i18n";
 import type { VocabularyTerm } from "../../lib/types";
 
 const emptyForm = {
@@ -16,6 +17,7 @@ const emptyForm = {
 };
 
 export const Vocabulary = () => {
+  const { t } = useI18n();
   const [terms, setTerms] = useState<VocabularyTerm[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,7 +31,10 @@ export const Vocabulary = () => {
   const isEditing = editingId !== null;
   const hasTerms = terms.length > 0;
 
-  const actionLabel = useMemo(() => (isEditing ? "Save changes" : "Add"), [isEditing]);
+  const actionLabel = useMemo(
+    () => (isEditing ? t("saveChanges") : t("add")),
+    [isEditing, t],
+  );
 
   useEffect(() => {
     void loadTerms();
@@ -40,7 +45,7 @@ export const Vocabulary = () => {
       const nextTerms = await getVocabulary();
       setTerms(nextTerms);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to load vocabulary.");
+      toast.error(error instanceof Error ? error.message : t("unableToLoadVocabulary"));
     } finally {
       setLoading(false);
     }
@@ -57,7 +62,7 @@ export const Vocabulary = () => {
     const definition = form.definition.trim();
 
     if (!term) {
-      toast.error("Enter a term first.");
+      toast.error(t("enterTermFirst"));
       return;
     }
 
@@ -71,7 +76,7 @@ export const Vocabulary = () => {
           definition.length > 0 ? definition : null,
           "general",
         );
-        toast.info("Vocabulary term added.");
+        toast.info(t("vocabularyTermAdded"));
       } else {
         await updateVocabularyTerm(
           editingId,
@@ -80,13 +85,13 @@ export const Vocabulary = () => {
           definition.length > 0 ? definition : null,
           "general",
         );
-        toast.info("Vocabulary term updated.");
+        toast.info(t("vocabularyTermUpdated"));
       }
 
       resetForm();
       await loadTerms();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to save vocabulary term.");
+      toast.error(error instanceof Error ? error.message : t("unableToSaveVocabularyTerm"));
     } finally {
       setSaving(false);
     }
@@ -99,9 +104,9 @@ export const Vocabulary = () => {
       if (editingId === id) {
         resetForm();
       }
-      toast.info("Vocabulary term deleted.");
+      toast.info(t("vocabularyTermDeleted"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to delete vocabulary term.");
+      toast.error(error instanceof Error ? error.message : t("unableToDeleteVocabularyTerm"));
     }
   };
 
@@ -123,22 +128,20 @@ export const Vocabulary = () => {
   return (
     <div className="space-y-8">
       <header ref={topRef} className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-white">Vocabulary</h1>
-        <p className="text-neutral-400">
-          Add terms you want DictateAI to learn.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight text-white">{t("navVocabulary")}</h1>
+        <p className="text-neutral-400">{t("vocabularySubtitle")}</p>
       </header>
 
-      <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+      <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
           <div className="flex flex-col gap-4">
             <div className="space-y-2">
               <span className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-                Term
+                {t("termLabel")}
               </span>
               <input
                 ref={termInputRef}
                 type="text"
-                placeholder="Feishu"
+                placeholder={t("termPlaceholder")}
                 value={form.term}
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, term: event.target.value }))
@@ -147,20 +150,20 @@ export const Vocabulary = () => {
               />
             </div>
             <Field
-              label="Phonetic Pronunciation"
-              placeholder="Fay-Shu"
+              label={t("phoneticPronunciationLabel")}
+              placeholder={t("phoneticPlaceholder")}
               value={form.phonetic}
               onChange={(value) => setForm((previous) => ({ ...previous, phonetic: value }))}
               inputRef={phoneticInputRef}
             />
             <div className="space-y-2">
               <span className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-                Definition
+                {t("definitionLabel")}
               </span>
               <input
                 ref={definitionInputRef}
                 type="text"
-                placeholder="Internal collaboration platform"
+                placeholder={t("definitionPlaceholder")}
                 value={form.definition}
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, definition: event.target.value }))
@@ -175,7 +178,7 @@ export const Vocabulary = () => {
                     className="flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-neutral-400 transition-colors hover:bg-white/[0.05] hover:text-white"
                   >
                     <X className="h-4 w-4" />
-                    Cancel
+                    {t("cancel")}
                   </button>
                 ) : null}
                 <button
@@ -185,7 +188,7 @@ export const Vocabulary = () => {
                   className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isEditing ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                  {saving ? "Saving..." : actionLabel}
+                  {saving ? t("saving") : actionLabel}
                 </button>
               </div>
             </div>
@@ -194,13 +197,13 @@ export const Vocabulary = () => {
           <div className="space-y-6 border-t border-white/[0.06] pt-6">
             {loading ? (
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-5 py-6 text-sm text-neutral-500">
-                Loading vocabulary...
+                {t("loadingVocabulary")}
               </div>
             ) : null}
 
             {!loading && !hasTerms ? (
               <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] px-5 py-8 text-center text-sm text-neutral-500">
-                No vocabulary terms yet.
+                {t("noVocabularyTermsYet")}
               </div>
             ) : null}
 
@@ -222,7 +225,7 @@ export const Vocabulary = () => {
                         ) : null}
                       </div>
                       <p className="text-sm leading-relaxed text-neutral-400">
-                        {term.definition || "No definition added."}
+                        {term.definition || t("noDefinitionAdded")}
                       </p>
                     </div>
 

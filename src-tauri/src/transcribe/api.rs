@@ -30,6 +30,7 @@ pub struct SpeechApiSettings {
 }
 
 pub async fn transcribe(
+    client: &reqwest::Client,
     audio: &[f32],
     language: &str,
     model: &str,
@@ -42,17 +43,17 @@ pub async fn transcribe(
     let wav_bytes = pcm_to_wav(audio)?;
 
     match model {
-        "deepgram-nova-3" => {
-            transcribe_deepgram(&wav_bytes, language, &settings.deepgram_api_key).await
+        "nova-3" => {
+            transcribe_deepgram(client, &wav_bytes, language, &settings.deepgram_api_key).await
         }
         "gpt-4o-mini-transcribe" | "gpt-4o-transcribe" => {
-            transcribe_openai(&wav_bytes, language, model, &settings.openai_api_key).await
+            transcribe_openai(client, &wav_bytes, language, model, &settings.openai_api_key).await
         }
-        "google-chirp-3" => transcribe_google_chirp(&wav_bytes, language, &settings).await,
+        "chirp_3" => transcribe_google_chirp(client, &wav_bytes, language, &settings).await,
         "nvidia-parakeet-tdt-0.6b-v2" | "nvidia-canary-qwen-2.5b" => {
-            transcribe_nvidia(&wav_bytes, language, model, &settings).await
+            transcribe_nvidia(client, &wav_bytes, language, model, &settings).await
         }
-        "alibaba-qwen3-asr-flash" => transcribe_alibaba(&wav_bytes, language, &settings).await,
+        "qwen3-asr-flash" => transcribe_alibaba(client, &wav_bytes, language, &settings).await,
         "doubao-byteplus" => transcribe_doubao(&wav_bytes, language, &settings).await,
         _ => Err(AppError::Config(format!(
             "Unsupported speech model: {}",
@@ -61,14 +62,13 @@ pub async fn transcribe(
     }
 }
 
-pub async fn validate_openai_api_key(api_key: &str) -> AppResult<()> {
+pub async fn validate_openai_api_key(client: &reqwest::Client, api_key: &str) -> AppResult<()> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config("OpenAI API key not configured.".into()));
     }
 
-    let client = reqwest::Client::new();
     let response = client
-        .get("https://api.openai.com/v1/models/gpt-4.1-mini")
+        .get("https://api.openai.com/v1/models")
         .bearer_auth(api_key)
         .send()
         .await
@@ -86,7 +86,7 @@ pub async fn validate_openai_api_key(api_key: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn validate_deepgram_api_key(api_key: &str) -> AppResult<()> {
+pub async fn validate_deepgram_api_key(client: &reqwest::Client, api_key: &str) -> AppResult<()> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config("Deepgram API key not configured.".into()));
     }
@@ -94,7 +94,6 @@ pub async fn validate_deepgram_api_key(api_key: &str) -> AppResult<()> {
     let wav_bytes = pcm_to_wav(&vec![0.0; 1600])?;
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&language=en-US";
 
-    let client = reqwest::Client::new();
     let response = client
         .post(url)
         .header("Content-Type", "audio/wav")
@@ -119,6 +118,7 @@ pub async fn validate_deepgram_api_key(api_key: &str) -> AppResult<()> {
 }
 
 pub async fn validate_google_speech_config(
+    client: &reqwest::Client,
     api_key: &str,
     project_id: &str,
     region: &str,
@@ -152,12 +152,12 @@ pub async fn validate_google_speech_config(
     };
 
     let wav_bytes = pcm_to_wav(&vec![0.0; 1600])?;
-    transcribe_google_chirp(&wav_bytes, "en", &settings).await?;
+    transcribe_google_chirp(client, &wav_bytes, "en", &settings).await?;
 
     Ok(())
 }
 
-pub async fn validate_nvidia_config(base_url: &str, api_key: &str) -> AppResult<()> {
+pub async fn validate_nvidia_config(client: &reqwest::Client, base_url: &str, api_key: &str) -> AppResult<()> {
     if base_url.trim().is_empty() {
         return Err(AppError::Config(
             "NVIDIA base URL not configured.".into(),
@@ -165,7 +165,6 @@ pub async fn validate_nvidia_config(base_url: &str, api_key: &str) -> AppResult<
     }
 
     let endpoint = join_endpoint(base_url, "/v1/audio/transcriptions");
-    let client = reqwest::Client::new();
     let request = client.post(endpoint);
     let request = if api_key.trim().is_empty() {
         request
@@ -231,6 +230,7 @@ fn pcm_to_wav(audio: &[f32]) -> AppResult<Vec<u8>> {
 }
 
 async fn transcribe_openai(
+    client: &reqwest::Client,
     wav_bytes: &[u8],
     language: &str,
     model: &str,
@@ -257,7 +257,6 @@ async fn transcribe_openai(
         .text("model", model.to_string())
         .text("language", language.to_string());
 
-    let client = reqwest::Client::new();
     let response = client
         .post("https://api.openai.com/v1/audio/transcriptions")
         .bearer_auth(api_key)
@@ -305,7 +304,7 @@ struct DeepgramAlternative {
     transcript: String,
 }
 
-async fn transcribe_deepgram(wav_bytes: &[u8], language: &str, api_key: &str) -> AppResult<String> {
+async fn transcribe_deepgram(client: &reqwest::Client, wav_bytes: &[u8], language: &str, api_key: &str) -> AppResult<String> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config(
             "Deepgram Nova-3 requires speech_deepgram_api_key in settings.".into(),
@@ -317,7 +316,6 @@ async fn transcribe_deepgram(wav_bytes: &[u8], language: &str, api_key: &str) ->
         language_to_bcp47(language)
     );
 
-    let client = reqwest::Client::new();
     let response = client
         .post(url)
         .header("Content-Type", "audio/wav")
@@ -382,6 +380,7 @@ struct GoogleAlternative {
 }
 
 async fn transcribe_google_chirp(
+    client: &reqwest::Client,
     wav_bytes: &[u8],
     language: &str,
     settings: &SpeechApiSettings,
@@ -418,7 +417,6 @@ async fn transcribe_google_chirp(
         settings.google_project_id, region, settings.google_api_key
     );
 
-    let client = reqwest::Client::new();
     let response = client
         .post(&url)
         .json(&request)
@@ -454,6 +452,7 @@ async fn transcribe_google_chirp(
 }
 
 async fn transcribe_nvidia(
+    client: &reqwest::Client,
     wav_bytes: &[u8],
     language: &str,
     model: &str,
@@ -481,7 +480,6 @@ async fn transcribe_nvidia(
         .text("model", model.to_string());
 
     let endpoint = join_endpoint(&settings.nvidia_base_url, "/v1/audio/transcriptions");
-    let client = reqwest::Client::new();
     let request = client.post(endpoint).multipart(form);
     let request = if settings.nvidia_api_key.trim().is_empty() {
         request
@@ -511,6 +509,7 @@ async fn transcribe_nvidia(
 }
 
 async fn transcribe_alibaba(
+    client: &reqwest::Client,
     wav_bytes: &[u8],
     language: &str,
     settings: &SpeechApiSettings,
@@ -549,7 +548,6 @@ async fn transcribe_alibaba(
         }
     });
 
-    let client = reqwest::Client::new();
     let response = client
         .post(endpoint)
         .bearer_auth(settings.alibaba_api_key.trim())
@@ -808,6 +806,8 @@ fn language_to_bcp47(code: &str) -> &str {
         "de" => "de-DE",
         "ja" => "ja-JP",
         "zh" => "zh-CN",
+        "sv" => "sv-SE",
+        "fi" => "fi-FI",
         _ => "en-US",
     }
 }

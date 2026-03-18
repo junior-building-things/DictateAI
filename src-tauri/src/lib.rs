@@ -143,7 +143,7 @@ pub fn run() {
                     let screen_size = monitor.size();
                     let logical_width = screen_size.width as f64 / scale;
                     let logical_height = screen_size.height as f64 / scale;
-                    let window_width = 920.0;
+                    let window_width = 1000.0;
                     let window_height = (logical_height - 48.0).max(600.0);
                     let x = ((logical_width - window_width) / 2.0).max(0.0);
 

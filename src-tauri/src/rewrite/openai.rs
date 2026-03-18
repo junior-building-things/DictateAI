@@ -31,6 +31,7 @@ struct ChatChoiceMessage {
 }
 
 pub async fn rewrite(
+    client: &reqwest::Client,
     api_key: &str,
     model: &str,
     system_prompt: &str,
@@ -44,7 +45,7 @@ pub async fn rewrite(
 
     let request = ChatCompletionRequest {
         model: if model.trim().is_empty() {
-            "gpt-4.1-mini".to_string()
+            "gpt-5-mini".to_string()
         } else {
             model.to_string()
         },
@@ -61,7 +62,6 @@ pub async fn rewrite(
         temperature: 0.2,
     };
 
-    let client = reqwest::Client::new();
     let response = client
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(api_key)

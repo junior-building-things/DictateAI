@@ -130,7 +130,7 @@ export default function TranscriptionSettings() {
           </>
         )}
 
-        {selected === "google-chirp-3" && (
+        {selected === "chirp_3" && (
           <>
             <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Google API key</label>
             <input

@@ -14,7 +14,6 @@ import {
   validateDeepgramApiKey,
   validateGeminiApiKey,
   validateGoogleSpeechConfig,
-  validateNvidiaConfig,
   validateOpenAiApiKey,
 } from "../../lib/commands";
 import {
@@ -30,21 +29,25 @@ import {
   type RewriteProvider,
   type SpeechProvider,
 } from "../../lib/modelCatalog";
+import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { cn } from "../../lib/utils";
 
 const ALIBABA_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+const SETTINGS_CHANGED_EVENT = "dictateai-settings-changed";
+
+function emitSettingsChanged() {
+  window.dispatchEvent(new Event(SETTINGS_CHANGED_EVENT));
+}
 
 export const Models = () => {
+  const { t } = useI18n();
   const { models, setModels } = useAppStore();
   const [deepgramKey, setDeepgramKey] = useState("");
   const [googleSpeechKey, setGoogleSpeechKey] = useState("");
   const [googleProjectId, setGoogleProjectId] = useState("");
   const [googleRegion, setGoogleRegion] = useState("us");
   const [geminiKey, setGeminiKey] = useState("");
-  const [nvidiaBaseUrl, setNvidiaBaseUrl] = useState("http://127.0.0.1:9000");
-  const [nvidiaApiKey, setNvidiaApiKey] = useState("");
-  const [hasSavedNvidiaConfig, setHasSavedNvidiaConfig] = useState(false);
   const [alibabaKey, setAlibabaKey] = useState("");
   const [openAiKey, setOpenAiKey] = useState("");
   const [action, setAction] = useState<string | null>(null);
@@ -60,8 +63,6 @@ export const Models = () => {
           nextGoogleProjectId,
           nextGoogleRegion,
           nextGeminiKey,
-          nextNvidiaBaseUrl,
-          nextNvidiaApiKey,
           nextAlibabaKey,
           nextOpenAiKey,
         ] = await Promise.all([
@@ -70,8 +71,6 @@ export const Models = () => {
           getSetting("speech_google_project_id").catch(() => ""),
           getSetting("speech_google_region").catch(() => "us"),
           getSetting("gemini_api_key").catch(() => ""),
-          getSetting("speech_nvidia_base_url").catch(() => "http://127.0.0.1:9000"),
-          getSetting("speech_nvidia_api_key").catch(() => ""),
           getSetting("alibaba_api_key").catch(() => ""),
           getSetting("speech_openai_api_key").catch(() => ""),
         ]);
@@ -85,8 +84,6 @@ export const Models = () => {
         setGoogleProjectId(nextGoogleProjectId);
         setGoogleRegion(nextGoogleRegion || "us");
         setGeminiKey(nextGeminiKey);
-        setNvidiaBaseUrl(nextNvidiaBaseUrl || "http://127.0.0.1:9000");
-        setNvidiaApiKey(nextNvidiaApiKey);
         setAlibabaKey(nextAlibabaKey);
         setOpenAiKey(nextOpenAiKey);
       } finally {
@@ -111,8 +108,8 @@ export const Models = () => {
         return Boolean(deepgramKey.trim());
       case "Google":
         return Boolean(googleSpeechKey.trim() && googleProjectId.trim());
-      case "NVIDIA":
-        return hasSavedNvidiaConfig;
+      case "OpenAI":
+        return Boolean(openAiKey.trim());
       case "Alibaba":
         return Boolean(alibabaKey.trim());
     }
@@ -142,7 +139,7 @@ export const Models = () => {
     });
 
     if (hasConfiguredSpeechCredentials(provider)) {
-      toast.info(`Speech model updated to ${model}.`);
+      toast.info(t("speechModelUpdatedToast", { model }));
     }
   };
 
@@ -159,7 +156,7 @@ export const Models = () => {
     });
 
     if (hasConfiguredRewriteCredentials(provider)) {
-      toast.info(`Rewrite model updated to ${model}.`);
+      toast.info(t("rewriteModelUpdatedToast", { model }));
     }
   };
 
@@ -168,7 +165,7 @@ export const Models = () => {
     try {
       await work();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to save provider settings.");
+      toast.error(error instanceof Error ? error.message : t("unableToSaveProviderSettings"));
     } finally {
       setAction(null);
     }
@@ -178,12 +175,13 @@ export const Models = () => {
     runAction("save-deepgram", async () => {
       const apiKey = deepgramKey.trim();
       if (!apiKey) {
-        throw new Error("Enter a Deepgram API key first.");
+        throw new Error(t("enterDeepgramApiKeyFirst"));
       }
 
       await validateDeepgramApiKey(apiKey);
       await saveSetting("speech_deepgram_api_key", apiKey);
-      toast.info("Deepgram key validated and saved.");
+      emitSettingsChanged();
+      toast.info(t("deepgramKeyValidatedAndSaved"));
     });
 
   const saveGoogleSpeech = () =>
@@ -193,10 +191,10 @@ export const Models = () => {
       const region = googleRegion.trim() || "us";
 
       if (!apiKey) {
-        throw new Error("Enter a Google Speech API key first.");
+        throw new Error(t("enterGoogleSpeechApiKeyFirst"));
       }
       if (!projectId) {
-        throw new Error("Enter a Google Cloud project ID first.");
+        throw new Error(t("enterGoogleProjectIdFirst"));
       }
 
       await validateGoogleSpeechConfig(apiKey, projectId, region);
@@ -206,41 +204,28 @@ export const Models = () => {
         saveSetting("speech_google_region", region),
       ]);
       setGoogleRegion(region);
-      toast.info("Google speech settings validated and saved.");
+      emitSettingsChanged();
+      toast.info(t("googleSpeechSettingsValidatedAndSaved"));
     });
 
   const saveGemini = () =>
     runAction("save-gemini", async () => {
       const apiKey = geminiKey.trim();
       if (!apiKey) {
-        throw new Error("Enter a Gemini API key first.");
+        throw new Error(t("enterGeminiApiKeyFirst"));
       }
 
       await validateGeminiApiKey(apiKey, "gemini-2.5-flash-lite");
       await saveSetting("gemini_api_key", apiKey);
-      toast.info("Gemini key validated and saved.");
-    });
-
-  const saveNvidia = () =>
-    runAction("save-nvidia", async () => {
-      const baseUrl = nvidiaBaseUrl.trim();
-      const apiKey = nvidiaApiKey.trim();
-
-      await validateNvidiaConfig(baseUrl, apiKey);
-      await Promise.all([
-        saveSetting("speech_nvidia_base_url", baseUrl),
-        saveSetting("speech_nvidia_api_key", apiKey),
-      ]);
-      setNvidiaBaseUrl(baseUrl);
-      setHasSavedNvidiaConfig(true);
-      toast.info("NVIDIA endpoint validated and saved.");
+      emitSettingsChanged();
+      toast.info(t("geminiKeyValidatedAndSaved"));
     });
 
   const saveAlibaba = () =>
     runAction("save-alibaba", async () => {
       const apiKey = alibabaKey.trim();
       if (!apiKey) {
-        throw new Error("Enter an Alibaba API key first.");
+        throw new Error(t("enterAlibabaApiKeyFirst"));
       }
 
       await validateAlibabaApiKey(apiKey);
@@ -248,45 +233,45 @@ export const Models = () => {
         saveSetting("alibaba_api_key", apiKey),
         saveSetting("alibaba_base_url", ALIBABA_BASE_URL),
       ]);
-      toast.info("Alibaba key validated and saved.");
+      emitSettingsChanged();
+      toast.info(t("alibabaKeyValidatedAndSaved"));
     });
 
   const saveOpenAi = () =>
     runAction("save-openai", async () => {
       const apiKey = openAiKey.trim();
       if (!apiKey) {
-        throw new Error("Enter an OpenAI API key first.");
+        throw new Error(t("enterOpenAiApiKeyFirst"));
       }
 
       await validateOpenAiApiKey(apiKey);
       await saveSetting("speech_openai_api_key", apiKey);
-      toast.info("OpenAI key validated and saved.");
+      emitSettingsChanged();
+      toast.info(t("openAiKeyValidatedAndSaved"));
     });
 
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-white">Models Configuration</h1>
-        <p className="text-neutral-400">
-          Choose the speech and rewrite models DictateAI uses.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight text-white">{t("navModels")}</h1>
+        <p className="text-neutral-400">{t("modelsSubtitle")}</p>
       </header>
 
-      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
         <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
             <AudioLines className="h-5 w-5 text-blue-500" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-white">Speech Model</h2>
+            <h2 className="text-xl font-semibold text-white">{t("speechModelTitle")}</h2>
             <p className="text-sm text-neutral-500">
-              Configure which model transcribes your speech into text.
+              {t("speechModelDescription")}
             </p>
           </div>
         </div>
 
         <div className="grid gap-8 md:grid-cols-2">
-          <Field label="Provider">
+          <Field label={t("providerLabel")}>
             <Select
               value={models.speechProvider}
               onChange={(value) =>
@@ -299,7 +284,7 @@ export const Models = () => {
               renderLeading={renderProviderOptionIcon}
             />
           </Field>
-          <Field label="Model">
+          <Field label={t("modelLabel")}>
             <Select
               value={models.speechModel}
               onChange={(value) => void updateSpeechSelection({ model: value })}
@@ -308,10 +293,16 @@ export const Models = () => {
           </Field>
         </div>
 
-        <MetricsRow metrics={selectedSpeechModel.metrics} firstLabel="Latency" middleLabel="Accuracy" />
+        <MetricsRow
+          metrics={selectedSpeechModel.metrics}
+          firstLabel={t("latencyLabel")}
+          middleLabel={t("accuracyLabel")}
+          t={t}
+        />
 
         <div>
           {renderSpeechCredentials({
+            t,
             provider: models.speechProvider,
             deepgramKey,
             setDeepgramKey,
@@ -321,42 +312,34 @@ export const Models = () => {
             setGoogleProjectId,
             googleRegion,
             setGoogleRegion,
-            nvidiaBaseUrl,
-            setNvidiaBaseUrl: (value) => {
-              setHasSavedNvidiaConfig(false);
-              setNvidiaBaseUrl(value);
-            },
-            nvidiaApiKey,
-            setNvidiaApiKey: (value) => {
-              setHasSavedNvidiaConfig(false);
-              setNvidiaApiKey(value);
-            },
+            openAiKey,
+            setOpenAiKey,
             alibabaKey,
             setAlibabaKey,
             action,
             saveDeepgram,
             saveGoogleSpeech,
-            saveNvidia,
+            saveOpenAi,
             saveAlibaba,
           })}
         </div>
       </section>
 
-      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
         <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
             <PenLine className="h-5 w-5 text-blue-500" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-white">Rewrite Model</h2>
+            <h2 className="text-xl font-semibold text-white">{t("rewriteModelTitle")}</h2>
             <p className="text-sm text-neutral-500">
-              Configure which model rewrites the transcribed text.
+              {t("rewriteModelDescription")}
             </p>
           </div>
         </div>
 
         <div className="grid gap-8 md:grid-cols-2">
-          <Field label="Provider">
+          <Field label={t("providerLabel")}>
             <Select
               value={models.rewriteProvider}
               onChange={(value) =>
@@ -369,7 +352,7 @@ export const Models = () => {
               renderLeading={renderProviderOptionIcon}
             />
           </Field>
-          <Field label="Model">
+          <Field label={t("modelLabel")}>
             <Select
               value={models.rewriteModel}
               onChange={(value) => void updateRewriteSelection({ model: value })}
@@ -378,10 +361,16 @@ export const Models = () => {
           </Field>
         </div>
 
-        <MetricsRow metrics={selectedRewriteModel.metrics} firstLabel="TFTT" middleLabel="Throughput" />
+        <MetricsRow
+          metrics={selectedRewriteModel.metrics}
+          firstLabel={t("tfttLabel")}
+          middleLabel={t("throughputLabel")}
+          t={t}
+        />
 
         <div>
           {renderRewriteCredentials({
+            t,
             provider: models.rewriteProvider,
             openAiKey,
             setOpenAiKey,
@@ -418,41 +407,45 @@ const TextInput = ({
   actionLabel?: string;
   onAction?: () => void;
   actionBusy?: boolean;
-}) => (
-  <label className="block space-y-2">
-    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-      {label}
-    </span>
-    <div className="relative">
-      <input
-        type={password ? "password" : "text"}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && onAction && value.trim()) {
-            event.preventDefault();
-            onAction();
-          }
-        }}
-        placeholder={placeholder}
-        className={cn(
-          "w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50",
-          onAction && value.trim() ? "pr-28" : "",
-        )}
-      />
-      {onAction && value.trim() ? (
-        <button
-          type="button"
-          onClick={onAction}
-          disabled={actionBusy}
-          className="absolute right-2 top-1/2 inline-flex min-w-[84px] -translate-y-1/2 items-center justify-center rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white transition-all hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:bg-neutral-700"
-        >
-          {actionBusy ? "Saving..." : actionLabel ?? "Save"}
-        </button>
-      ) : null}
-    </div>
-  </label>
-);
+}) => {
+  const { t } = useI18n();
+
+  return (
+    <label className="block space-y-2">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+        {label}
+      </span>
+      <div className="relative">
+        <input
+          type={password ? "password" : "text"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && onAction && value.trim()) {
+              event.preventDefault();
+              onAction();
+            }
+          }}
+          placeholder={placeholder}
+          className={cn(
+            "w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50",
+            onAction && value.trim() ? "pr-28" : "",
+          )}
+        />
+        {onAction && value.trim() ? (
+          <button
+            type="button"
+            onClick={onAction}
+            disabled={actionBusy}
+            className="absolute right-2 top-1/2 inline-flex min-w-[84px] -translate-y-1/2 items-center justify-center rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white transition-all hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {actionBusy ? t("saving") : actionLabel ?? t("save")}
+          </button>
+        ) : null}
+      </div>
+    </label>
+  );
+};
 
 const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   <div className="space-y-3">
@@ -463,41 +456,21 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-const ButtonRow = ({ children }: { children: ReactNode }) => (
-  <div className="mt-3 flex flex-wrap gap-3">{children}</div>
-);
-
-const PrimaryButton = ({
-  children,
-  onClick,
-  busy,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  busy: boolean;
-}) => (
-  <button
-    onClick={onClick}
-    disabled={busy}
-    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-neutral-700"
-  >
-    {busy ? "Working..." : children}
-  </button>
-);
-
 const MetricsRow = ({
   metrics,
   firstLabel,
   middleLabel,
+  t,
 }: {
   metrics: ModelMetrics;
   firstLabel: string;
   middleLabel: string;
+  t: ReturnType<typeof useI18n>["t"];
 }) => (
   <div className="flex flex-wrap items-center gap-4 pt-2">
     <MetricBadge label={firstLabel} value={metrics.latency} tone="emerald" />
     <MetricBadge label={middleLabel} value={metrics.accuracy} tone="blue" />
-    <MetricBadge label="Cost" value={metrics.cost} tone="neutral" />
+    <MetricBadge label={t("costLabel")} value={metrics.cost} tone="neutral" />
   </div>
 );
 
@@ -595,7 +568,6 @@ function renderProviderOptionIcon(provider: string) {
     Google: "/provider-icons/gemini.png",
     OpenAI: "/provider-icons/openai.png",
     Deepgram: "/provider-icons/deepgram.png",
-    NVIDIA: "/provider-icons/nvidia.png",
     Alibaba: "/provider-icons/qwen.png",
   };
 
@@ -615,6 +587,7 @@ function renderProviderOptionIcon(provider: string) {
 }
 
 function renderSpeechCredentials({
+  t,
   provider,
   deepgramKey,
   setDeepgramKey,
@@ -624,18 +597,17 @@ function renderSpeechCredentials({
   setGoogleProjectId,
   googleRegion,
   setGoogleRegion,
-  nvidiaBaseUrl,
-  setNvidiaBaseUrl,
-  nvidiaApiKey,
-  setNvidiaApiKey,
+  openAiKey,
+  setOpenAiKey,
   alibabaKey,
   setAlibabaKey,
   action,
   saveDeepgram,
   saveGoogleSpeech,
-  saveNvidia,
+  saveOpenAi,
   saveAlibaba,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
   provider: SpeechProvider;
   deepgramKey: string;
   setDeepgramKey: (value: string) => void;
@@ -645,16 +617,14 @@ function renderSpeechCredentials({
   setGoogleProjectId: (value: string) => void;
   googleRegion: string;
   setGoogleRegion: (value: string) => void;
-  nvidiaBaseUrl: string;
-  setNvidiaBaseUrl: (value: string) => void;
-  nvidiaApiKey: string;
-  setNvidiaApiKey: (value: string) => void;
+  openAiKey: string;
+  setOpenAiKey: (value: string) => void;
   alibabaKey: string;
   setAlibabaKey: (value: string) => void;
   action: string | null;
   saveDeepgram: () => Promise<void>;
   saveGoogleSpeech: () => Promise<void>;
-  saveNvidia: () => Promise<void>;
+  saveOpenAi: () => Promise<void>;
   saveAlibaba: () => Promise<void>;
 }) {
   switch (provider) {
@@ -662,7 +632,7 @@ function renderSpeechCredentials({
       return (
         <>
           <TextInput
-            label="Deepgram API Key"
+            label={t("deepgramApiKeyLabel")}
             value={deepgramKey}
             onChange={setDeepgramKey}
             placeholder="dg_..."
@@ -676,7 +646,7 @@ function renderSpeechCredentials({
       return (
         <>
           <TextInput
-            label="Speech API Key"
+            label={t("speechApiKeyLabel")}
             value={googleSpeechKey}
             onChange={setGoogleSpeechKey}
             placeholder="AIza..."
@@ -685,47 +655,38 @@ function renderSpeechCredentials({
             actionBusy={action === "save-google-speech"}
           />
           <TextInput
-            label="Cloud Project ID"
+            label={t("cloudProjectIdLabel")}
             value={googleProjectId}
             onChange={setGoogleProjectId}
             placeholder="my-gcp-project"
           />
           <TextInput
-            label="Region"
+            label={t("regionLabel")}
             value={googleRegion}
             onChange={setGoogleRegion}
             placeholder="us"
           />
         </>
       );
-    case "NVIDIA":
+    case "OpenAI":
       return (
         <>
           <TextInput
-            label="Base URL"
-            value={nvidiaBaseUrl}
-            onChange={setNvidiaBaseUrl}
-            placeholder="http://127.0.0.1:9000"
-          />
-          <TextInput
-            label="API Key (optional)"
-            value={nvidiaApiKey}
-            onChange={setNvidiaApiKey}
-            placeholder="nvapi-..."
+            label={t("openAiApiKeyLabel")}
+            value={openAiKey}
+            onChange={setOpenAiKey}
+            placeholder="sk-..."
             password
+            onAction={() => void saveOpenAi()}
+            actionBusy={action === "save-openai"}
           />
-          <ButtonRow>
-            <PrimaryButton onClick={() => void saveNvidia()} busy={action === "save-nvidia"}>
-              Save endpoint
-            </PrimaryButton>
-          </ButtonRow>
         </>
       );
     case "Alibaba":
       return (
         <>
           <TextInput
-            label="API Key"
+            label={t("apiKey")}
             value={alibabaKey}
             onChange={setAlibabaKey}
             placeholder="sk-..."
@@ -739,6 +700,7 @@ function renderSpeechCredentials({
 }
 
 function renderRewriteCredentials({
+  t,
   provider,
   openAiKey,
   setOpenAiKey,
@@ -751,6 +713,7 @@ function renderRewriteCredentials({
   saveAlibaba,
   saveOpenAi,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
   provider: RewriteProvider;
   openAiKey: string;
   setOpenAiKey: (value: string) => void;
@@ -768,7 +731,7 @@ function renderRewriteCredentials({
       return (
         <>
           <TextInput
-            label="API Key"
+            label={t("apiKey")}
             value={openAiKey}
             onChange={setOpenAiKey}
             placeholder="sk-..."
@@ -782,7 +745,7 @@ function renderRewriteCredentials({
       return (
         <>
           <TextInput
-            label="Gemini API Key"
+            label={t("geminiApiKeyLabel")}
             value={geminiKey}
             onChange={setGeminiKey}
             placeholder="AIza..."
@@ -796,7 +759,7 @@ function renderRewriteCredentials({
       return (
         <>
           <TextInput
-            label="API Key"
+            label={t("apiKey")}
             value={alibabaKey}
             onChange={setAlibabaKey}
             placeholder="sk-..."

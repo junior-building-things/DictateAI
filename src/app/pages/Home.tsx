@@ -7,11 +7,13 @@ import {
   promptAccessibilityPermission,
   promptMicrophonePermission,
 } from "../../lib/commands";
+import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { formatHotkeyToken, getMicrophonePermissionState, type MicrophonePermissionState } from "../../lib/ui";
 import { cn } from "../../lib/utils";
 
 export const Home = () => {
+  const { t } = useI18n();
   const { hotkeySettings, setHotkeySettings } = useAppStore();
   const [microphonePermission, setMicrophonePermission] =
     useState<MicrophonePermissionState>("unknown");
@@ -71,7 +73,7 @@ export const Home = () => {
 
   const handleRecordHotkey = () => {
     setIsRecordingHotkey(true);
-    toast.info("Press the shortcut you want to use.");
+    toast.info(t("pressShortcutToast"));
 
     const handler = (event: KeyboardEvent) => {
       event.preventDefault();
@@ -92,7 +94,7 @@ export const Home = () => {
 
       const nextHotkey = parts.join(" + ");
       void setHotkeySettings({ hotkey: nextHotkey });
-      toast.info("Hotkey updated.");
+      toast.info(t("hotkeyUpdatedToast"));
       cleanup(handler);
     };
 
@@ -114,7 +116,7 @@ export const Home = () => {
   const handleAutoPasteToggle = () => {
     const nextValue = !hotkeySettings.autoPaste;
     void setHotkeySettings({ autoPaste: nextValue });
-    toast.info(nextValue ? "Auto-paste enabled." : "Auto-paste disabled.");
+    toast.info(nextValue ? t("autoPasteEnabledToast") : t("autoPasteDisabledToast"));
   };
 
   const handleModeChange = (mode: "hold" | "toggle") => {
@@ -123,14 +125,16 @@ export const Home = () => {
     }
 
     void setHotkeySettings({ mode });
-    toast.info(mode === "hold" ? "Hold to dictate enabled." : "Tap to dictate enabled.");
+    toast.info(
+      mode === "hold" ? t("holdToDictateEnabledToast") : t("tapToDictateEnabledToast"),
+    );
   };
 
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-white">Home</h1>
-        <p className="text-neutral-400">Manage your permissions and hotkey.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-white">{t("navHome")}</h1>
+        <p className="text-neutral-400">{t("homeSubtitle")}</p>
       </header>
 
       <div className="grid gap-x-4 gap-y-8 md:grid-cols-2">
@@ -143,8 +147,10 @@ export const Home = () => {
               )}
             />
           }
-          label="Microphone"
-          status={microphoneEnabled ? "Enabled" : "Action needed"}
+          label={t("microphoneLabel")}
+          description={
+            microphoneEnabled ? t("permissionEnabledDescription") : t("permissionTapToEnableDescription")
+          }
           accent="blue"
           actionable={!microphoneEnabled}
           onClick={() => void requestPermission("microphone")}
@@ -158,30 +164,32 @@ export const Home = () => {
               )}
             />
           }
-          label="Accessibility"
-          status={accessibilityGranted ? "Enabled" : "Action needed"}
+          label={t("accessibilityLabel")}
+          description={
+            accessibilityGranted ? t("permissionEnabledDescription") : t("permissionTapToEnableDescription")
+          }
           accent="blue"
           actionable={!accessibilityGranted}
           onClick={() => void requestPermission("accessibility")}
         />
       </div>
 
-      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
         <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
             <Keyboard className="h-5 w-5 text-blue-500" />
           </div>
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold text-white">Hotkey</h2>
+            <h2 className="text-xl font-semibold text-white">{t("globalHotkey")}</h2>
             <p className="text-sm text-neutral-500">
-              Configure the shortcut to trigger DictateAI.
+              {t("hotkeySectionDescription")}
             </p>
           </div>
         </div>
 
         <div className="space-y-4">
           <label className="block text-sm font-medium uppercase tracking-widest text-neutral-400">
-            Desktop shortcut
+            {t("desktopShortcutLabel")}
           </label>
           <div
             className={cn(
@@ -201,7 +209,7 @@ export const Home = () => {
                     exit={{ opacity: 0, scale: 0.95 }}
                     className="text-3xl font-bold tracking-wider text-blue-500"
                   >
-                    Recording...
+                    {t("recordingLabel")}
                   </motion.div>
                 ) : (
                   <motion.div
@@ -229,7 +237,7 @@ export const Home = () => {
                 className="mx-auto flex items-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.05] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-white/[0.1]"
               >
                 <Keyboard className="h-4 w-4" />
-                Record new hotkey
+                {t("recordNewHotkeyLabel")}
               </button>
             </div>
           </div>
@@ -238,15 +246,15 @@ export const Home = () => {
         <div className="grid gap-x-4 gap-y-8 md:grid-cols-2">
           <ModeCard
             icon={Hand}
-            label="Hold to dictate"
-            description="Hold to start listening, release to stop."
+            label={t("holdToDictateLabel")}
+            description={t("holdToDictateDescription")}
             active={hotkeySettings.mode === "hold"}
             onClick={() => handleModeChange("hold")}
           />
           <ModeCard
             icon={MousePointerClick}
-            label="Tap to dictate"
-            description="Tap once to start listening, then tap again to stop."
+            label={t("tapToDictateLabel")}
+            description={t("tapToDictateDescription")}
             active={hotkeySettings.mode === "toggle"}
             onClick={() => handleModeChange("toggle")}
           />
@@ -254,10 +262,9 @@ export const Home = () => {
 
         <div className="flex items-center justify-between gap-6 border-t border-white/[0.06] pt-8">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-white">Auto-paste</p>
+            <p className="text-sm font-medium text-white">{t("autoPaste")}</p>
             <p className="text-xs text-neutral-500">
-              The rewritten text is auto-pasted into the focused text field. When turned off, the
-              text is copied to the clipboard.
+              {t("autoPasteSettingDescription")}
             </p>
           </div>
           <button
@@ -285,30 +292,28 @@ export const Home = () => {
 const PermissionCard = ({
   icon,
   label,
-  status,
+  description,
   accent,
   actionable,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
-  status: "Enabled" | "Action needed";
+  description: string;
   accent: "blue" | "neutral";
   actionable: boolean;
   onClick: () => void;
 }) => {
-  const enabled = status === "Enabled";
-
   return (
     <button
       type="button"
       onClick={actionable ? onClick : undefined}
-      className={cn(
-        "rounded-2xl border p-6 text-left transition-all",
-        actionable
-          ? "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.05]"
-          : "cursor-default border-white/[0.06] bg-white/[0.03]",
-      )}
+        className={cn(
+          "rounded-2xl border p-6 text-left transition-all",
+          actionable
+          ? "border-white/[0.08] bg-[#121212] hover:border-white/[0.16] hover:bg-[#171717]"
+          : "cursor-default border-white/[0.06] bg-[#121212]",
+        )}
     >
       <div className="flex items-center gap-4">
         <div
@@ -325,9 +330,7 @@ const PermissionCard = ({
         </div>
         <div className="min-w-0 space-y-1">
           <div className="text-lg font-semibold text-white">{label}</div>
-        <p className="text-sm leading-relaxed text-neutral-500">
-          {enabled ? "Enabled." : "Tap to enable."}
-        </p>
+          <p className="text-sm leading-relaxed text-neutral-500">{description}</p>
         </div>
       </div>
     </button>
@@ -352,8 +355,8 @@ const ModeCard = ({
     className={cn(
       "rounded-xl border p-5 text-left transition-all",
       active
-        ? "border-white/[0.1] bg-white/[0.04]"
-        : "border-white/[0.04] bg-transparent hover:bg-white/[0.02]",
+        ? "border-white/[0.1] bg-[#171717]"
+        : "border-white/[0.04] bg-[#121212] hover:bg-[#171717]",
     )}
   >
     <div className="mb-3 flex items-center gap-3">

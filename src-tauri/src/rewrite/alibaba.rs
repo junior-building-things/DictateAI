@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
 
@@ -8,8 +8,6 @@ struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    extra_body: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -19,6 +17,7 @@ struct ChatMessage {
 }
 
 pub async fn rewrite(
+    client: &reqwest::Client,
     api_key: &str,
     base_url: &str,
     model: &str,
@@ -48,15 +47,9 @@ pub async fn rewrite(
             },
         ],
         temperature: 0.2,
-        extra_body: if model == "qwen3-8b" {
-            Some(json!({ "enable_thinking": false }))
-        } else {
-            None
-        },
     };
 
     let endpoint = compatible_chat_completions_url(base_url);
-    let client = reqwest::Client::new();
     let response = client
         .post(endpoint)
         .bearer_auth(api_key)
@@ -84,8 +77,9 @@ pub async fn rewrite(
         .ok_or_else(|| AppError::Rewrite("Empty response from Alibaba rewrite.".into()))
 }
 
-pub async fn validate_api_key(api_key: &str, base_url: &str, model: &str) -> AppResult<()> {
+pub async fn validate_api_key(client: &reqwest::Client, api_key: &str, base_url: &str, model: &str) -> AppResult<()> {
     let _ = rewrite(
+        client,
         api_key,
         base_url,
         model,

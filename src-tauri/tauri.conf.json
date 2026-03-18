@@ -14,7 +14,7 @@
       {
         "title": "DictateAI",
         "label": "main",
-        "width": 920,
+        "width": 1000,
         "height": 600,
         "resizable": true,
         "visible": true,

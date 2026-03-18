@@ -59,8 +59,8 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             ('rewrite_add_punctuation', 'true'),
             ('hotkey', 'CommandOrControl+S'),
             ('hotkey_mode', 'hold'),
-            ('speech_model', 'deepgram-nova-3'),
-            ('speech_provider', 'Deepgram'),
+            ('speech_model', 'gpt-4o-mini-transcribe'),
+            ('speech_provider', 'OpenAI'),
             ('speech_deepgram_api_key', ''),
             ('speech_nvidia_api_key', ''),
             ('speech_nvidia_base_url', 'http://127.0.0.1:9000'),
@@ -80,21 +80,41 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             ('sound_enabled', 'true'),
             ('max_recording_seconds', '120');
 
-        UPDATE settings SET value = 'Deepgram'
+        UPDATE settings SET value = 'OpenAI'
             WHERE key = 'speech_provider'
-              AND value IN ('Browser', 'OpenAI');
+              AND value IN ('Browser', 'NVIDIA', 'Doubao', 'BytePlus');
 
-        UPDATE settings SET value = 'deepgram-nova-3'
+        UPDATE settings SET value = 'gpt-4o-mini-transcribe'
             WHERE key = 'speech_model'
-              AND value IN ('gpt-4o-mini-transcribe', 'gpt-4o-transcribe', '');
+              AND value IN ('', 'nvidia-parakeet-tdt-0.6b-v2', 'nvidia-canary-qwen-2.5b', 'doubao-byteplus');
+
+        UPDATE settings SET value = 'nova-3'
+            WHERE key = 'speech_model'
+              AND value = 'deepgram-nova-3';
+
+        UPDATE settings SET value = 'chirp_3'
+            WHERE key = 'speech_model'
+              AND value = 'google-chirp-3';
+
+        UPDATE settings SET value = 'qwen3-asr-flash'
+            WHERE key = 'speech_model'
+              AND value = 'alibaba-qwen3-asr-flash';
 
         UPDATE settings SET value = 'Google'
             WHERE key = 'rewrite_provider'
               AND value = 'Local Cleanup';
 
-        UPDATE settings SET value = 'gpt-4.1-mini'
+        UPDATE settings SET value = 'gpt-5-mini'
             WHERE key = 'rewrite_model'
-              AND value IN ('gpt-4o-mini', 'gpt-4.1');
+              AND value IN ('gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini');
+
+        UPDATE settings SET value = 'gpt-5-nano'
+            WHERE key = 'rewrite_model'
+              AND value = 'gpt-4.1-nano';
+
+        UPDATE settings SET value = 'qwen2.5-7b-instruct'
+            WHERE key = 'rewrite_model'
+              AND value = 'qwen3-8b';
         ",
     )?;
 

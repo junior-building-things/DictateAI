@@ -1,4 +1,4 @@
-export type SpeechProvider = "Deepgram" | "Google" | "NVIDIA" | "Alibaba";
+export type SpeechProvider = "Deepgram" | "Google" | "OpenAI" | "Alibaba";
 export type RewriteProvider = "OpenAI" | "Google" | "Alibaba";
 
 export interface ModelOption {
@@ -14,14 +14,14 @@ export interface ModelMetrics {
   cost: string;
 }
 
-export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "Deepgram";
+export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "OpenAI";
 export const DEFAULT_REWRITE_PROVIDER: RewriteProvider = "Google";
 
 const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
   Deepgram: [
     {
-      label: "Nova-3",
-      setting: "deepgram-nova-3",
+      label: "nova-3",
+      setting: "nova-3",
       description: "Deepgram's general-purpose streaming and prerecorded speech model.",
       metrics: {
         latency: "200-300 ms",
@@ -32,8 +32,8 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
   ],
   Google: [
     {
-      label: "Chirp 3",
-      setting: "google-chirp-3",
+      label: "chirp_3",
+      setting: "chirp_3",
       description: "Google Cloud Speech-to-Text v2 Chirp 3.",
       metrics: {
         latency: "300-600 ms",
@@ -42,32 +42,32 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
       },
     },
   ],
-  NVIDIA: [
+  OpenAI: [
     {
-      label: "Parakeet TDT 0.6B v2",
-      setting: "nvidia-parakeet-tdt-0.6b-v2",
-      description: "Use with an NVIDIA NIM-compatible ASR endpoint for Parakeet.",
+      label: "gpt-4o-mini-transcribe",
+      setting: "gpt-4o-mini-transcribe",
+      description: "Lighter, faster OpenAI GPT-4o Mini speech-to-text.",
       metrics: {
-        latency: "150-250 ms",
-        accuracy: "6-9% WER",
-        cost: "Free",
+        latency: "300-600 ms",
+        accuracy: "5-7% WER",
+        cost: "$0.003/min",
       },
     },
     {
-      label: "Canary Qwen 2.5B",
-      setting: "nvidia-canary-qwen-2.5b",
-      description: "Use with an NVIDIA-compatible ASR endpoint for Canary Qwen.",
+      label: "gpt-4o-transcribe",
+      setting: "gpt-4o-transcribe",
+      description: "OpenAI GPT-4o powered speech-to-text transcription.",
       metrics: {
-        latency: "200-400 ms",
-        accuracy: "5-7% WER",
-        cost: "Free",
+        latency: "500-900 ms",
+        accuracy: "3-5% WER",
+        cost: "$0.006/min",
       },
     },
   ],
   Alibaba: [
     {
-      label: "Qwen3 ASR Flash",
-      setting: "alibaba-qwen3-asr-flash",
+      label: "qwen3-asr-flash",
+      setting: "qwen3-asr-flash",
       description: "Alibaba Model Studio ASR through the OpenAI-compatible chat endpoint.",
       metrics: {
         latency: "90-120 ms TTFT",
@@ -81,82 +81,78 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
 const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
   OpenAI: [
     {
-      label: "GPT-4.1 Mini",
-      setting: "gpt-4.1-mini",
-      description: "OpenAI's lower-latency GPT-4.1 rewrite model.",
+      label: "gpt-5-mini",
+      setting: "gpt-5-mini",
+      description: "OpenAI's smaller GPT-5 rewrite model.",
       metrics: {
         latency: "700-1100 ms",
         accuracy: "74 tokens/s",
-        cost: "$0.000224",
+        cost: "$0.000224/req",
       },
     },
     {
-      label: "GPT-4.1 Nano",
-      setting: "gpt-4.1-nano",
-      description: "The lightest GPT-4.1 rewrite option.",
+      label: "gpt-5-nano",
+      setting: "gpt-5-nano",
+      description: "The lightest GPT-5 rewrite option.",
       metrics: {
         latency: "600-900 ms",
         accuracy: "127 tokens/s",
-        cost: "$0.000056",
+        cost: "$0.000056/req",
       },
     },
   ],
   Google: [
     {
-      label: "Gemini 2.5 Flash Lite",
+      label: "gemini-2.5-flash-lite",
       setting: "gemini-2.5-flash-lite",
       description: "Fast prompt-aware rewrite with Gemini 2.5 Flash-Lite.",
       metrics: {
         latency: "300-800 ms",
         accuracy: "184-392 tokens/s",
-        cost: "$0.000056",
+        cost: "$0.000056/req",
       },
     },
     {
-      label: "Gemini 3.1 Flash Lite",
+      label: "gemini-3.1-flash-lite-preview",
       setting: "gemini-3.1-flash-lite-preview",
       description: "Maps to Google's public Gemini 3.1 Flash-Lite preview model.",
       metrics: {
         latency: "100-300 ms",
         accuracy: "Faster output (45% faster)",
-        cost: "$0.000173",
+        cost: "$0.000173/req",
       },
     },
   ],
   Alibaba: [
     {
-      label: "Qwen2.5 7B Instruct",
+      label: "qwen2.5-7b-instruct",
       setting: "qwen2.5-7b-instruct",
       description: "Alibaba's compact instruction-tuned Qwen 2.5 model.",
       metrics: {
         latency: "0.5-1.5 s typical (depends on GPU)",
         accuracy: "60-120 tokens/s",
-        cost: "Free",
-      },
-    },
-    {
-      label: "Qwen3 8B",
-      setting: "qwen3-8b",
-      description: "Alibaba's Qwen3 8B chat model with thinking disabled for speed.",
-      metrics: {
-        latency: "Not published",
-        accuracy: "Not published",
-        cost: "$0.072/$0.287",
+        cost: "$0.0000105/req",
       },
     },
   ],
 };
 
 const legacySpeechAliases: Record<string, string> = {
-  "gpt-4o-mini-transcribe": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
-  "gpt-4o-transcribe": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
+  "deepgram-nova-3": "nova-3",
+  "google-chirp-3": "chirp_3",
+  "alibaba-qwen3-asr-flash": "qwen3-asr-flash",
+  "nvidia-parakeet-tdt-0.6b-v2": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
+  "nvidia-canary-qwen-2.5b": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
   "Local On-Device Speech": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
   "doubao-byteplus": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
 };
 
 const legacyRewriteAliases: Record<string, string> = {
-  "gpt-4o-mini": "gpt-4.1-mini",
-  "gpt-4.1": "gpt-4.1-mini",
+  "gpt-4o-mini": "gpt-5-mini",
+  "gpt-4.1": "gpt-5-mini",
+  "gpt-4.1-mini": "gpt-5-mini",
+  "gpt-4.1-nano": "gpt-5-nano",
+  "qwen3-8b": "qwen2.5-7b-instruct",
   "Rule-based Cleanup": firstRewriteSetting(DEFAULT_REWRITE_PROVIDER),
 };
 

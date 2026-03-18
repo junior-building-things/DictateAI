@@ -166,24 +166,27 @@ pub fn get_available_models(state: State<AppState>) -> Vec<model_manager::ModelI
 }
 
 #[tauri::command]
-pub async fn validate_gemini_api_key(api_key: String, model_name: String) -> Result<bool, String> {
-    gemini::validate_api_key(&api_key, &model_name)
+pub async fn validate_gemini_api_key(state: State<'_, AppState>, api_key: String, model_name: String) -> Result<bool, String> {
+    let client = state.http_client.clone();
+    gemini::validate_api_key(&client, &api_key, &model_name)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn validate_openai_api_key(api_key: String) -> Result<bool, String> {
-    api::validate_openai_api_key(&api_key)
+pub async fn validate_openai_api_key(state: State<'_, AppState>, api_key: String) -> Result<bool, String> {
+    let client = state.http_client.clone();
+    api::validate_openai_api_key(&client, &api_key)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn validate_deepgram_api_key(api_key: String) -> Result<bool, String> {
-    api::validate_deepgram_api_key(&api_key)
+pub async fn validate_deepgram_api_key(state: State<'_, AppState>, api_key: String) -> Result<bool, String> {
+    let client = state.http_client.clone();
+    api::validate_deepgram_api_key(&client, &api_key)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)
@@ -191,27 +194,32 @@ pub async fn validate_deepgram_api_key(api_key: String) -> Result<bool, String> 
 
 #[tauri::command]
 pub async fn validate_google_speech_config(
+    state: State<'_, AppState>,
     api_key: String,
     project_id: String,
     region: String,
 ) -> Result<bool, String> {
-    api::validate_google_speech_config(&api_key, &project_id, &region)
+    let client = state.http_client.clone();
+    api::validate_google_speech_config(&client, &api_key, &project_id, &region)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn validate_nvidia_config(base_url: String, api_key: String) -> Result<bool, String> {
-    api::validate_nvidia_config(&base_url, &api_key)
+pub async fn validate_nvidia_config(state: State<'_, AppState>, base_url: String, api_key: String) -> Result<bool, String> {
+    let client = state.http_client.clone();
+    api::validate_nvidia_config(&client, &base_url, &api_key)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn validate_alibaba_api_key(api_key: String) -> Result<bool, String> {
+pub async fn validate_alibaba_api_key(state: State<'_, AppState>, api_key: String) -> Result<bool, String> {
+    let client = state.http_client.clone();
     alibaba::validate_api_key(
+        &client,
         &api_key,
         "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         "qwen2.5-7b-instruct",
