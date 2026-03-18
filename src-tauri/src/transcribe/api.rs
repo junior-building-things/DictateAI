@@ -47,7 +47,14 @@ pub async fn transcribe(
             transcribe_deepgram(client, &wav_bytes, language, &settings.deepgram_api_key).await
         }
         "gpt-4o-mini-transcribe" | "gpt-4o-transcribe" => {
-            transcribe_openai(client, &wav_bytes, language, model, &settings.openai_api_key).await
+            transcribe_openai(
+                client,
+                &wav_bytes,
+                language,
+                model,
+                &settings.openai_api_key,
+            )
+            .await
         }
         "chirp_3" => transcribe_google_chirp(client, &wav_bytes, language, &settings).await,
         "nvidia-parakeet-tdt-0.6b-v2" | "nvidia-canary-qwen-2.5b" => {
@@ -124,7 +131,9 @@ pub async fn validate_google_speech_config(
     region: &str,
 ) -> AppResult<()> {
     if api_key.trim().is_empty() {
-        return Err(AppError::Config("Google Speech API key not configured.".into()));
+        return Err(AppError::Config(
+            "Google Speech API key not configured.".into(),
+        ));
     }
     if project_id.trim().is_empty() {
         return Err(AppError::Config(
@@ -157,11 +166,13 @@ pub async fn validate_google_speech_config(
     Ok(())
 }
 
-pub async fn validate_nvidia_config(client: &reqwest::Client, base_url: &str, api_key: &str) -> AppResult<()> {
+pub async fn validate_nvidia_config(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+) -> AppResult<()> {
     if base_url.trim().is_empty() {
-        return Err(AppError::Config(
-            "NVIDIA base URL not configured.".into(),
-        ));
+        return Err(AppError::Config("NVIDIA base URL not configured.".into()));
     }
 
     let endpoint = join_endpoint(base_url, "/v1/audio/transcriptions");
@@ -187,9 +198,10 @@ pub async fn validate_nvidia_config(client: &reqwest::Client, base_url: &str, ap
 
     let body = response.text().await.unwrap_or_default();
     match status {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(AppError::Transcription(
-            format!("NVIDIA endpoint rejected the API key: {}", body),
-        )),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(AppError::Transcription(format!(
+            "NVIDIA endpoint rejected the API key: {}",
+            body
+        ))),
         StatusCode::NOT_FOUND => Err(AppError::Transcription(
             "NVIDIA endpoint did not expose /v1/audio/transcriptions.".into(),
         )),
@@ -304,7 +316,12 @@ struct DeepgramAlternative {
     transcript: String,
 }
 
-async fn transcribe_deepgram(client: &reqwest::Client, wav_bytes: &[u8], language: &str, api_key: &str) -> AppResult<String> {
+async fn transcribe_deepgram(
+    client: &reqwest::Client,
+    wav_bytes: &[u8],
+    language: &str,
+    api_key: &str,
+) -> AppResult<String> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config(
             "Deepgram Nova-3 requires speech_deepgram_api_key in settings.".into(),

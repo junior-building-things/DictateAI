@@ -44,6 +44,46 @@ Build desktop app:
 npm run tauri build
 ```
 
+## In-app updates
+
+DictateAI now uses Tauri's updater flow for installed desktop apps.
+
+- The app checks GitHub Releases at:
+  - `https://github.com/junior-building-things/DictateAI/releases/latest/download/latest.json`
+- Initial install still comes from the website DMG.
+- Installed apps update from signed updater bundles, not from the DMG.
+
+### One-time setup
+
+1. A Tauri updater public key is embedded in the app.
+2. Add the private key to GitHub Actions secrets:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY < /Users/thomas/.tauri/dictateai-updater.key
+```
+
+3. If you generated a password-protected key, also add:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+### Publish a new app update
+
+1. Bump the app version in:
+   - `package.json`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.toml`
+   - `src/lib/i18n.tsx`
+2. Commit and push.
+3. Create and push a git tag like `v1.0.6`.
+4. GitHub Actions runs `.github/workflows/release.yml` and publishes:
+   - the macOS app bundle + DMG
+   - signed updater artifacts
+   - `latest.json`
+
+After that, installed DictateAI apps can use `Home -> Updates -> Check for updates`.
+
 ## First-time setup in app
 
 1. Open the app settings window.

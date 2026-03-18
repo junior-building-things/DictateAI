@@ -34,9 +34,7 @@ pub fn resolve(app: &AppHandle, state: &AppState) -> Option<ModeResolution> {
     let api_ready = match speech_model.as_str() {
         "nova-3" => !deepgram_api_key.trim().is_empty(),
         "gpt-4o-mini-transcribe" | "gpt-4o-transcribe" => !openai_api_key.trim().is_empty(),
-        "chirp_3" => {
-            !google_api_key.trim().is_empty() && !google_project_id.trim().is_empty()
-        }
+        "chirp_3" => !google_api_key.trim().is_empty() && !google_project_id.trim().is_empty(),
         "qwen3-asr-flash" => !alibaba_api_key.trim().is_empty(),
         "doubao-byteplus" => {
             !doubao_access_token.trim().is_empty() && !doubao_app_id.trim().is_empty()

@@ -154,7 +154,11 @@ pub async fn rewrite(
     Ok(text)
 }
 
-pub async fn validate_api_key(client: &reqwest::Client, api_key: &str, model: &str) -> AppResult<()> {
+pub async fn validate_api_key(
+    client: &reqwest::Client,
+    api_key: &str,
+    model: &str,
+) -> AppResult<()> {
     let _ = rewrite(
         client,
         api_key,

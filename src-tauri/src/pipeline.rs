@@ -82,8 +82,7 @@ async fn run_inner(
     let (selected_speech_model, speech_settings) = {
         let db = state.db.lock().unwrap();
         (
-            settings::get(&db, "speech_model")
-                .unwrap_or_else(|_| "gpt-4o-mini-transcribe".into()),
+            settings::get(&db, "speech_model").unwrap_or_else(|_| "gpt-4o-mini-transcribe".into()),
             SpeechApiSettings {
                 deepgram_api_key: settings::get(&db, "speech_deepgram_api_key").unwrap_or_default(),
                 openai_api_key: settings::get(&db, "speech_openai_api_key").unwrap_or_default(),
@@ -156,19 +155,22 @@ async fn run_inner(
         local_cleanup_options,
     ) = {
         let db = state.db.lock().unwrap();
-        let use_vocabulary =
-            settings::get(&db, "rewrite_use_vocabulary").unwrap_or_else(|_| "true".into()) == "true";
+        let use_vocabulary = settings::get(&db, "rewrite_use_vocabulary")
+            .unwrap_or_else(|_| "true".into())
+            == "true";
         let vocab_terms = if use_vocabulary {
             vocabulary::get_all(&db)?
         } else {
             Vec::new()
         };
         let custom_prompt = settings::get(&db, "rewrite_system_prompt").unwrap_or_default();
-        let use_custom_prompt =
-            settings::get(&db, "rewrite_use_custom_prompt").unwrap_or_else(|_| "false".into()) == "true";
+        let use_custom_prompt = settings::get(&db, "rewrite_use_custom_prompt")
+            .unwrap_or_else(|_| "false".into())
+            == "true";
         let rewrite_tone = settings::get(&db, "rewrite_tone").unwrap_or_else(|_| "neutral".into());
-        let use_favorites =
-            settings::get(&db, "rewrite_use_favorites").unwrap_or_else(|_| "false".into()) == "true";
+        let use_favorites = settings::get(&db, "rewrite_use_favorites")
+            .unwrap_or_else(|_| "false".into())
+            == "true";
         let has_active_custom_prompt = use_custom_prompt && !custom_prompt.trim().is_empty();
         let favorite_examples = if use_favorites {
             history::get_favorite_examples(&db, 8)?
@@ -229,13 +231,12 @@ async fn run_inner(
         log::info!("Using custom rewrite prompt; rewrite tone setting is ignored for this run");
     }
 
-    let (system_prompt, user_message) =
-        prompt::build_prompt(
-            &prepared_system_prompt,
-            &raw_text,
-            &vocab_terms,
-            &favorite_examples,
-        );
+    let (system_prompt, user_message) = prompt::build_prompt(
+        &prepared_system_prompt,
+        &raw_text,
+        &vocab_terms,
+        &favorite_examples,
+    );
     let rewrite_started_at = Instant::now();
     let (rewritten, rewrite_model_used) = match rewrite_provider.as_str() {
         "OpenAI" => {

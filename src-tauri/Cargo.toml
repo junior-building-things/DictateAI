@@ -38,6 +38,7 @@ serde_json = "1"
 
 # Keyboard simulation for paste
 enigo = { version = "0.2", features = ["serde"] }
+tauri-plugin-process = "2"
 
 # macOS native CGEvent for keyboard simulation (thread-safe unlike HIToolbox)
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -55,3 +56,6 @@ log = "0.4"
 thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 flate2 = "1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

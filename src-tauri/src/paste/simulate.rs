@@ -21,7 +21,10 @@ pub fn insert_text(text: &str) -> AppResult<()> {
     enigo
         .text(text)
         .map_err(|e| AppError::Clipboard(format!("Failed to insert text: {}", e)))?;
-    log::info!("Text inserted directly into focused field ({} chars)", text.len());
+    log::info!(
+        "Text inserted directly into focused field ({} chars)",
+        text.len()
+    );
     Ok(())
 }
 
@@ -30,10 +33,9 @@ pub fn copy_text<R: Runtime, T: Manager<R>>(manager: &T, text: &str) -> AppResul
         return Ok(());
     }
 
-    manager
-        .clipboard()
-        .write_text(text)
-        .map_err(|error| AppError::Clipboard(format!("Failed to copy text to clipboard: {}", error)))?;
+    manager.clipboard().write_text(text).map_err(|error| {
+        AppError::Clipboard(format!("Failed to copy text to clipboard: {}", error))
+    })?;
     log::info!("Text copied to clipboard ({} chars)", text.len());
     Ok(())
 }

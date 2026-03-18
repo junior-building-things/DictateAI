@@ -77,7 +77,12 @@ pub async fn rewrite(
         .ok_or_else(|| AppError::Rewrite("Empty response from Alibaba rewrite.".into()))
 }
 
-pub async fn validate_api_key(client: &reqwest::Client, api_key: &str, base_url: &str, model: &str) -> AppResult<()> {
+pub async fn validate_api_key(
+    client: &reqwest::Client,
+    api_key: &str,
+    base_url: &str,
+    model: &str,
+) -> AppResult<()> {
     let _ = rewrite(
         client,
         api_key,

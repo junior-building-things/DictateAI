@@ -45,8 +45,17 @@
     },
     "macOSPrivateApi": true
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/junior-building-things/DictateAI/releases/latest/download/latest.json"
+      ],
+      "pubkey": "untrusted comment: minisign public key: 5C70F09DB22C42B8\nRWS4QiyynfBwXILFpT6h/jxw/9Q9jWFZNhbFT5zzjSvyFcwSeBKot8Dy"
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
