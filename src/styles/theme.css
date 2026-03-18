@@ -24,6 +24,40 @@ body.main-window {
     radial-gradient(circle at top, #101010 0%, #060606 48%, #030303 100%);
 }
 
+.main-shell {
+  --sidebar-width: 16rem;
+}
+
+.main-window-pattern,
+.main-window-scrim,
+.main-window-glow {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: var(--sidebar-width);
+  pointer-events: none;
+}
+
+.main-window-pattern {
+  bottom: 0;
+  z-index: 0;
+  opacity: 0.48;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.2) 1.1px, transparent 1.1px);
+  background-size: 19px 19px;
+}
+
+.main-window-scrim {
+  bottom: 0;
+  z-index: 0;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.main-window-glow {
+  height: 520px;
+  z-index: 0;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.045), transparent 68%);
+}
+
 body.overlay-window {
   overflow: hidden;
   background: transparent !important;

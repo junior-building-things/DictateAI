@@ -81,7 +81,7 @@ const LayoutInner = () => {
         : t("statusPermissionNeededDesc");
 
   return (
-    <div className="flex h-screen bg-[#0A0A0A] text-[#E5E5E5] font-sans selection:bg-blue-500/30 selection:text-blue-200">
+    <div className="main-shell flex h-screen bg-[#0A0A0A] text-[#E5E5E5] font-sans selection:bg-blue-500/30 selection:text-blue-200">
       <aside className="flex w-64 shrink-0 flex-col border-r border-white/[0.06] bg-[#0F0F0F]">
         <div className="flex items-center gap-3 p-6">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.4)]">
@@ -146,7 +146,10 @@ const LayoutInner = () => {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto bg-[#0A0A0A]">
+      <main className="relative flex-1 overflow-y-auto bg-[#0A0A0A]">
+        <div aria-hidden="true" className="main-window-pattern" />
+        <div aria-hidden="true" className="main-window-scrim" />
+        <div aria-hidden="true" className="main-window-glow" />
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
@@ -154,20 +157,8 @@ const LayoutInner = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="relative min-h-full"
+            className="relative z-10 min-h-full"
           >
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 opacity-48 [background-image:radial-gradient(circle,rgba(255,255,255,0.2)_1.1px,transparent_1.1px)] [background-size:19px_19px]"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-black/18"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.045),transparent_68%)]"
-            />
             <div className="relative z-10 mx-auto max-w-4xl p-12">
               <Outlet />
             </div>
