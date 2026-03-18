@@ -45,37 +45,24 @@
 
         <section class="feature-grid">
           <article class="info-card" id="install">
-            <p class="section-label">Install</p>
+            <p class="section-label">How to install:</p>
             <ol>
-              <li>Download the DMG and drag DictateAI into Applications.</li>
-              <li>Allow Microphone access.</li>
-              <li>Allow Accessibility access (to enable auto-paste).</li>
+              <li>Download and drag DictateAI into Applications.</li>
+              <li>
+                Run this command in the terminal:
+                <pre><code>xattr -dr com.apple.quarantine /Applications/DictateAI.app</code></pre>
+              </li>
             </ol>
+            <p class="card-note"><em>*This is to remove macOS's quarantine flag for non-notarized builds.</em></p>
           </article>
 
           <article class="info-card">
-            <p class="section-label">How to use</p>
+            <p class="section-label">How to use:</p>
             <ol>
-              <li>Press and hold the hotkey (e.g. Command+A).</li>
-              <li>Speak.</li>
-              <li>Release.</li>
+              <li>Enable microphone and accessibility permissions.</li>
+              <li>Insert your API keys.</li>
+              <li>Enjoy~</li>
             </ol>
-          </article>
-
-          <article class="info-card">
-            <p class="section-label">Security Note</p>
-            <p>
-              This is a direct macOS build. It is not notarized yet, so macOS may
-              show a security warning on first launch.
-            </p>
-            <details>
-              <summary>If macOS blocks opening the app</summary>
-              <p>
-                Move the app to Applications first, then right-click it and choose
-                <strong>Open</strong>. If Gatekeeper still blocks it, run:
-              </p>
-              <pre><code>xattr -dr com.apple.quarantine /Applications/DictateAI.app</code></pre>
-            </details>
           </article>
         </section>
       </main>
