@@ -1,7 +1,6 @@
 name: Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -35,19 +34,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
+      - name: Derive release version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build macOS app
+        run: npm run tauri build -- --target aarch64-apple-darwin
+
+      - name: Create updater artifacts
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./scripts/create-updater-artifacts.sh "${VERSION}" "${GITHUB_REF_NAME}"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: v__VERSION__
-          releaseName: DictateAI v__VERSION__
-          releaseBody: |
+          tag_name: ${{ github.ref_name }}
+          name: DictateAI ${{ github.ref_name }}
+          body: |
             Signed updater artifacts for DictateAI.
 
             Website installers remain separate; installed apps should use the in-app updater.
-          releaseDraft: false
+          draft: false
           prerelease: false
-          args: --target aarch64-apple-darwin
+          files: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/DictateAI_${{ env.VERSION }}_aarch64.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/DictateAI.app.tar.gz
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/DictateAI.app.tar.gz.sig
+            src-tauri/target/aarch64-apple-darwin/release/bundle/latest.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
