@@ -140,7 +140,7 @@ const LayoutInner = () => {
               {footerLabel}
             </span>
           </div>
-          <p className="px-2 pt-1 text-[11px] leading-relaxed text-neutral-500">
+          <p className="px-2 pt-2 text-[11px] leading-relaxed text-neutral-500">
             {footerDescription}
           </p>
         </div>
