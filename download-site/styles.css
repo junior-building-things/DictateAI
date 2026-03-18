@@ -123,6 +123,8 @@ h2 {
 }
 
 .hero-pretitle {
+  display: inline-block;
+  font-size: 1.16em;
   font-family: "Single Day", "SF Pro Display", "Avenir Next", "Helvetica Neue", sans-serif;
   font-style: italic;
   font-weight: 400;
