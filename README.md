@@ -82,7 +82,7 @@ gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
    - signed updater artifacts
    - `latest.json`
 
-After that, installed DictateAI apps can use `Home -> Updates -> Check for updates`.
+After that, installed DictateAI apps check for updates automatically on launch, download them in the background, and apply them the next time the app is opened.
 
 ## First-time setup in app
 

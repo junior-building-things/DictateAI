@@ -1,7 +1,4 @@
 import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { getVersion } from "@tauri-apps/api/app";
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type Update as TauriUpdate } from "@tauri-apps/plugin-updater";
 import { AnimatePresence, motion } from "motion/react";
 import { CornerDownRight, DownloadCloud, Hand, Keyboard, Mic, MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
@@ -17,16 +14,11 @@ import { cn } from "../../lib/utils";
 
 export const Home = () => {
   const { t } = useI18n();
-  const { hotkeySettings, setHotkeySettings } = useAppStore();
+  const { hotkeySettings, setHotkeySettings, updates } = useAppStore();
   const [microphonePermission, setMicrophonePermission] =
     useState<MicrophonePermissionState>("unknown");
   const [accessibilityEnabled, setAccessibilityEnabled] = useState<boolean | null>(null);
   const [isRecordingHotkey, setIsRecordingHotkey] = useState(false);
-  const [currentVersion, setCurrentVersion] = useState<string>("1.0.5");
-  const [availableUpdate, setAvailableUpdate] = useState<TauriUpdate | null>(null);
-  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
-  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
 
   const syncPermissions = useCallback(async () => {
@@ -54,20 +46,6 @@ export const Home = () => {
       document.removeEventListener("visibilitychange", handleFocus);
     };
   }, [syncPermissions]);
-
-  useEffect(() => {
-    void getVersion()
-      .then(setCurrentVersion)
-      .catch(() => setCurrentVersion(t("version").replace(/^v/, "")));
-  }, [t]);
-
-  useEffect(() => {
-    return () => {
-      if (availableUpdate) {
-        void availableUpdate.close().catch(() => undefined);
-      }
-    };
-  }, [availableUpdate]);
 
   const requestPermission = async (kind: "microphone" | "accessibility") => {
     const alreadyEnabled =
@@ -152,81 +130,6 @@ export const Home = () => {
     );
   };
 
-  const handleCheckForUpdates = async () => {
-    if (isCheckingForUpdates || isInstallingUpdate) {
-      return;
-    }
-
-    setIsCheckingForUpdates(true);
-    setDownloadProgress(null);
-
-    try {
-      const nextUpdate = await check();
-
-      if (!nextUpdate) {
-        if (availableUpdate) {
-          await availableUpdate.close().catch(() => undefined);
-        }
-        setAvailableUpdate(null);
-        toast.info(t("appUpToDateToast"));
-        return;
-      }
-
-      if (availableUpdate && availableUpdate !== nextUpdate) {
-        await availableUpdate.close().catch(() => undefined);
-      }
-
-      setAvailableUpdate(nextUpdate);
-      toast.info(t("updateAvailableToast", { version: nextUpdate.version }));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("unableToCheckForUpdates"));
-    } finally {
-      setIsCheckingForUpdates(false);
-    }
-  };
-
-  const handleInstallUpdate = async () => {
-    if (!availableUpdate || isInstallingUpdate) {
-      return;
-    }
-
-    setIsInstallingUpdate(true);
-    setDownloadProgress(0);
-
-    try {
-      let totalBytes = 0;
-      let downloadedBytes = 0;
-
-      await availableUpdate.downloadAndInstall((event) => {
-        if (event.event === "Started") {
-          totalBytes = event.data.contentLength ?? 0;
-          downloadedBytes = 0;
-          setDownloadProgress(totalBytes > 0 ? 0 : null);
-          return;
-        }
-
-        if (event.event === "Progress" && totalBytes > 0) {
-          downloadedBytes += event.data.chunkLength;
-          setDownloadProgress(Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)));
-          return;
-        }
-
-        if (event.event === "Finished") {
-          setDownloadProgress(100);
-        }
-      });
-
-      toast.info(t("restartingToApplyUpdateToast"));
-      await availableUpdate.close().catch(() => undefined);
-      setAvailableUpdate(null);
-      await relaunch();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("unableToInstallUpdate"));
-    } finally {
-      setIsInstallingUpdate(false);
-    }
-  };
-
   return (
     <div className="space-y-8">
       <header className="space-y-2">
@@ -289,38 +192,24 @@ export const Home = () => {
             <p className="text-xs font-medium uppercase tracking-widest text-neutral-500">
               {t("currentVersionLabel")}
             </p>
-            <p className="text-lg font-semibold text-white">v{currentVersion}</p>
+            <p className="text-lg font-semibold text-white">v{updates.currentVersion}</p>
             <p className="text-sm text-neutral-500">
-              {availableUpdate
-                ? t("updateAvailableDescription", { version: availableUpdate.version })
-                : t("updatesReadyDescription", { version: currentVersion })}
+              {updates.status === "checking"
+                ? t("updatesCheckingDescription")
+                : updates.status === "downloading" && updates.availableVersion
+                  ? t("updateDownloadingDescription", { version: updates.availableVersion })
+                  : updates.status === "ready" && updates.availableVersion
+                    ? t("updateAvailableDescription", { version: updates.availableVersion })
+                    : updates.status === "error"
+                      ? t("updatesUnavailableDescription")
+                      : t("updatesReadyDescription", { version: updates.currentVersion })}
             </p>
-            {isInstallingUpdate && downloadProgress !== null ? (
+            {updates.status === "downloading" && updates.downloadProgress !== null ? (
               <p className="text-xs font-medium text-blue-400">
-                {t("downloadingUpdateProgress", { progress: downloadProgress })}
+                {t("downloadingUpdateProgress", { progress: updates.downloadProgress })}
               </p>
             ) : null}
           </div>
-
-          <button
-            type="button"
-            onClick={() => void (availableUpdate ? handleInstallUpdate() : handleCheckForUpdates())}
-            disabled={isCheckingForUpdates || isInstallingUpdate}
-            className={cn(
-              "inline-flex min-h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold transition-all",
-              isCheckingForUpdates || isInstallingUpdate
-                ? "cursor-wait bg-white/[0.08] text-neutral-400"
-                : "bg-blue-600 text-white shadow-[0_0_18px_rgba(37,99,235,0.28)] hover:bg-blue-500",
-            )}
-          >
-            {isInstallingUpdate
-              ? t("installingUpdateButton")
-              : isCheckingForUpdates
-                ? t("checkingForUpdatesButton")
-                : availableUpdate
-                  ? t("installUpdateButton")
-                  : t("checkForUpdatesButton")}
-          </button>
         </div>
       </section>
 

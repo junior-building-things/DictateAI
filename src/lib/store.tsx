@@ -1,4 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
 import { toast } from "sonner";
 import {
   deleteHistoryEntry,
@@ -23,6 +25,7 @@ import {
   type RewriteProvider,
   type SpeechProvider,
 } from "./modelCatalog";
+import { useI18n } from "./i18n";
 import type { HistoryEntry } from "./types";
 import { displayHotkeyFromTauri, tauriHotkeyFromDisplay } from "./hotkeys";
 export type HotkeyMode = "hold" | "toggle";
@@ -67,11 +70,19 @@ export interface HotkeyState {
   autoPaste: boolean;
 }
 
+export interface UpdateState {
+  currentVersion: string;
+  availableVersion: string | null;
+  status: "checking" | "idle" | "downloading" | "ready" | "error";
+  downloadProgress: number | null;
+}
+
 interface AppState {
   history: HistoryItem[];
   rewriteRules: RewriteRulesState;
   models: ModelsState;
   hotkeySettings: HotkeyState;
+  updates: UpdateState;
   refreshHistory: () => Promise<void>;
   deleteHistoryItem: (id: number) => Promise<void>;
   toggleFavorite: (id: number) => void;
@@ -104,13 +115,27 @@ const defaultHotkeySettings: HotkeyState = {
   autoPaste: true,
 };
 
+const defaultUpdateState: UpdateState = {
+  currentVersion: "1.0.5",
+  availableVersion: null,
+  status: "checking",
+  downloadProgress: null,
+};
+
 const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
+  const tRef = useRef(t);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [rewriteRules, setRewriteRulesState] = useState<RewriteRulesState>(defaultRewriteRules);
   const [models, setModelsState] = useState<ModelsState>(defaultModels);
   const [hotkeySettings, setHotkeySettingsState] = useState<HotkeyState>(defaultHotkeySettings);
+  const [updates, setUpdates] = useState<UpdateState>(defaultUpdateState);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -153,6 +178,124 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const runUpdateCheck = async () => {
+      try {
+        const version = await getVersion().catch(() => tRef.current("version").replace(/^v/, ""));
+        if (!active) {
+          return;
+        }
+
+        setUpdates((previous) => ({
+          ...previous,
+          currentVersion: version,
+          status: "checking",
+          downloadProgress: null,
+        }));
+
+        const update = await check();
+        if (!active) {
+          await update?.close().catch(() => undefined);
+          return;
+        }
+
+        if (!update) {
+          setUpdates({
+            currentVersion: version,
+            availableVersion: null,
+            status: "idle",
+            downloadProgress: null,
+          });
+          return;
+        }
+
+        setUpdates({
+          currentVersion: version,
+          availableVersion: update.version,
+          status: "downloading",
+          downloadProgress: 0,
+        });
+        toast.info(tRef.current("updateDownloadingToast", { version: update.version }));
+
+        let totalBytes = 0;
+        let downloadedBytes = 0;
+
+        await update.downloadAndInstall((event) => {
+          if (!active) {
+            return;
+          }
+
+          if (event.event === "Started") {
+            totalBytes = event.data.contentLength ?? 0;
+            downloadedBytes = 0;
+            setUpdates({
+              currentVersion: version,
+              availableVersion: update.version,
+              status: "downloading",
+              downloadProgress: totalBytes > 0 ? 0 : null,
+            });
+            return;
+          }
+
+          if (event.event === "Progress") {
+            downloadedBytes += event.data.chunkLength;
+            setUpdates({
+              currentVersion: version,
+              availableVersion: update.version,
+              status: "downloading",
+              downloadProgress: totalBytes > 0
+                ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))
+                : null,
+            });
+            return;
+          }
+
+          if (event.event === "Finished") {
+            setUpdates({
+              currentVersion: version,
+              availableVersion: update.version,
+              status: "ready",
+              downloadProgress: 100,
+            });
+          }
+        });
+
+        if (!active) {
+          await update.close().catch(() => undefined);
+          return;
+        }
+
+        setUpdates({
+          currentVersion: version,
+          availableVersion: update.version,
+          status: "ready",
+          downloadProgress: 100,
+        });
+        toast.info(tRef.current("updateReadyOnNextLaunchToast", { version: update.version }));
+        await update.close().catch(() => undefined);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setUpdates((previous) => ({
+          ...previous,
+          status: "error",
+          downloadProgress: null,
+        }));
+        toast.error(error instanceof Error ? error.message : tRef.current("unableToCheckForUpdates"));
+      }
+    };
+
+    void runUpdateCheck();
+
     return () => {
       active = false;
     };
@@ -242,6 +385,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         rewriteRules,
         models,
         hotkeySettings,
+        updates,
         refreshHistory,
         deleteHistoryItem,
         toggleFavorite,
