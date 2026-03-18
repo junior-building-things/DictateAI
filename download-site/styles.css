@@ -30,7 +30,9 @@ body {
 }
 
 body {
+  position: relative;
   padding: 32px 20px 44px;
+  overflow-x: hidden;
 }
 
 a {
@@ -39,8 +41,32 @@ a {
 }
 
 .page-shell {
+  position: relative;
+  z-index: 1;
   margin: 0 auto;
   max-width: 1080px;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+body::before {
+  opacity: 0.48;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.2) 1.1px, transparent 1.1px);
+  background-size: 19px 19px;
+  z-index: 0;
+}
+
+body::after {
+  inset: 0 0 auto;
+  height: 520px;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.045), transparent 68%);
+  z-index: 0;
 }
 
 .topbar {
