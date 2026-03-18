@@ -126,8 +126,8 @@ const LayoutInner = () => {
           ))}
         </nav>
 
-        <div className="border-t border-white/[0.06] p-4">
-          <div className="flex items-center gap-3 px-2 py-2">
+        <div className="flex min-h-24 flex-col justify-center border-t border-white/[0.06] p-4">
+          <div className="flex items-center gap-3 px-2">
             <div
               className={cn(
                 "h-2 w-2 rounded-full",
@@ -140,7 +140,7 @@ const LayoutInner = () => {
               {footerLabel}
             </span>
           </div>
-          <p className="px-2 text-[11px] leading-relaxed text-neutral-500">
+          <p className="px-2 pt-1 text-[11px] leading-relaxed text-neutral-500">
             {footerDescription}
           </p>
         </div>
