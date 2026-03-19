@@ -116,7 +116,7 @@ const defaultHotkeySettings: HotkeyState = {
 };
 
 const defaultUpdateState: UpdateState = {
-  currentVersion: "1.0.5",
+  currentVersion: "1.0.6",
   availableVersion: null,
   status: "checking",
   downloadProgress: null,
