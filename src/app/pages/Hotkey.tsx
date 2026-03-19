@@ -1,6 +1,6 @@
 import { type ComponentType, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Hand, Info, Keyboard, MousePointerClick } from "lucide-react";
+import { CornerDownRight, Hand, Info, Keyboard, MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
 import { formatHotkeyToken } from "../../lib/ui";
 import { useAppStore } from "../../lib/store";
@@ -148,29 +148,35 @@ export const Hotkey = () => {
             onClick={() => handleModeChange("toggle")}
           />
         </div>
+      </section>
 
-        <div className="flex items-center justify-between gap-6 border-t border-white/[0.06] pt-8">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-white">Auto-paste</p>
-            <p className="text-xs text-neutral-500">
-              The rewritten text is auto-pasted into the focused text field. When turned off, the
-              text is copied to the clipboard.
-            </p>
+      <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+              <CornerDownRight className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Auto-paste</h2>
+              <p className="text-sm text-neutral-500">
+                The rewritten text is auto-pasted into the focused text field. When turned off, the
+                text is copied to the clipboard.
+              </p>
+            </div>
           </div>
           <button
+            type="button"
             onClick={handleAutoPasteToggle}
-            className={cn(
-              "h-6 w-12 shrink-0 rounded-full p-1 transition-all duration-300",
+            className={`h-6 w-12 shrink-0 rounded-full p-1 transition-all duration-300 ${
               hotkeySettings.autoPaste
-                ? "bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.4)]"
-                : "bg-white/[0.1]",
-            )}
+                ? "bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.35)]"
+                : "bg-white/[0.1]"
+            }`}
           >
             <div
-              className={cn(
-                "h-4 w-4 rounded-full bg-white transition-all duration-300",
-                hotkeySettings.autoPaste ? "translate-x-6" : "translate-x-0",
-              )}
+              className={`h-4 w-4 rounded-full bg-white transition-all duration-300 ${
+                hotkeySettings.autoPaste ? "translate-x-6" : "translate-x-0"
+              }`}
             />
           </button>
         </div>
