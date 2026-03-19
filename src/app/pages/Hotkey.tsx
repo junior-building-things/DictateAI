@@ -1,6 +1,6 @@
 import { type ComponentType, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CornerDownRight, Hand, Info, Keyboard, MousePointerClick } from "lucide-react";
+import { CornerDownRight, Hand, Info, MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
 import { formatHotkeyToken } from "../../lib/ui";
 import { useAppStore } from "../../lib/store";
@@ -80,15 +80,18 @@ export const Hotkey = () => {
           <label className="block text-sm font-medium uppercase tracking-widest text-neutral-400">
             Desktop shortcut
           </label>
-          <div
+          <button
+            type="button"
+            onClick={handleRecord}
+            disabled={isRecording}
             className={cn(
-              "flex items-center justify-center rounded-2xl border-2 border-dashed p-8 transition-all duration-300",
+              "flex w-full items-center justify-center rounded-2xl border-2 border-dashed p-8 transition-all duration-300",
               isRecording
                 ? "scale-[1.02] border-blue-500 bg-blue-500/5 shadow-[0_0_30px_rgba(37,99,235,0.15)]"
-                : "border-white/[0.1] bg-white/[0.02] hover:border-white/[0.2]",
+                : "cursor-pointer border-white/[0.1] bg-white/[0.02] hover:border-white/[0.2]",
             )}
           >
-            <div className="space-y-4 text-center">
+            <div className="text-center">
               <AnimatePresence mode="wait">
                 {isRecording ? (
                   <motion.div
@@ -119,17 +122,8 @@ export const Hotkey = () => {
                   </motion.div>
                 )}
               </AnimatePresence>
-
-              <button
-                onClick={handleRecord}
-                disabled={isRecording}
-                className="mx-auto flex items-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.05] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-white/[0.1]"
-              >
-                <Keyboard className="h-4 w-4" />
-                Record new hotkey
-              </button>
             </div>
-          </div>
+          </button>
         </div>
 
         <div className="grid gap-x-4 gap-y-8 md:grid-cols-2">
