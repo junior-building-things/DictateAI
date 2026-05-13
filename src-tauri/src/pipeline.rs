@@ -468,6 +468,10 @@ async fn run_inner(
         ),
     };
     ensure_run_current(state, run_id)?;
+    // Defensive: strip one level of wrapping quotes if the model added them
+    // despite the prompt. Common with small instruct models (Gemma 1B,
+    // Llama 1B) that mirror few-shot example formatting.
+    let rewritten = strip_wrapping_quotes(&rewritten);
     let model_used = format!("{} + {}", speech_model_used, rewrite_model_used);
 
     // Step 4: Save to history
@@ -643,6 +647,36 @@ fn ensure_parakeet_engine(
     let mut guard = state.parakeet_engine.lock().unwrap();
     *guard = Some((spec.id.to_string(), Arc::clone(&engine)));
     Ok(engine)
+}
+
+/// Remove one level of matched wrapping quotes from a rewrite output. Covers
+/// straight ASCII quotes plus the common curly/CJK pairs. Single-pair wraps
+/// are nearly always a model artifact; if the rewritten text starts and ends
+/// with the same quote character we drop them.
+fn strip_wrapping_quotes(s: &str) -> String {
+    let trimmed = s.trim();
+    let mut chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() < 2 {
+        return trimmed.to_string();
+    }
+    let first = chars[0];
+    let last = *chars.last().unwrap();
+    let is_pair = matches!(
+        (first, last),
+        ('"', '"')
+            | ('\'', '\'')
+            | ('\u{201C}', '\u{201D}')
+            | ('\u{2018}', '\u{2019}')
+            | ('\u{300C}', '\u{300D}')
+            | ('\u{300E}', '\u{300F}')
+            | ('\u{00AB}', '\u{00BB}')
+    );
+    if !is_pair {
+        return trimmed.to_string();
+    }
+    chars.remove(0);
+    chars.pop();
+    chars.iter().collect::<String>().trim().to_string()
 }
 
 fn ensure_run_current(state: &AppState, run_id: u64) -> AppResult<()> {

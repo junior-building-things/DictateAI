@@ -73,14 +73,16 @@ pub fn build_prompt(
             "\n\n## Favorite Rewrite Examples\nUse these starred examples as style guidance for future rewrites. Preserve the current transcript's meaning and do not copy phrasing unless it naturally fits.\n",
         );
         for example in favorite_examples {
+            // Keep examples unquoted so smaller instruct models (Gemma, Llama 1B)
+            // don't mirror the `"..."` wrapper in their output.
             system.push_str(&format!(
-                "- Raw: \"{}\"\n  Rewritten: \"{}\"\n",
+                "- Raw: {}\n  Rewritten: {}\n",
                 example.raw_text, example.rewritten
             ));
         }
     }
 
-    let user_message = format!("Raw: \"{}\"", raw_transcript);
+    let user_message = format!("Raw: {}", raw_transcript);
 
     (system, user_message)
 }
