@@ -9,7 +9,9 @@ use crate::rewrite::gemini;
 use crate::rewrite::prompt;
 use crate::state::{AppState, STATE_IDLE};
 use crate::transcribe::api;
-use crate::transcribe::local::download::{self as local_download, find_model};
+use crate::transcribe::local::download::{
+    self as local_download, direct_file_path, find_model, LocalArtifact,
+};
 use crate::transcribe::model_manager;
 
 // --- Settings ---
@@ -183,12 +185,23 @@ pub fn local_model_status(app: AppHandle, model_id: String) -> Result<LocalModel
         .app_data_dir()
         .map_err(|e| format!("App data dir error: {}", e))?;
     let dir = local_download::model_dir(&app_data_dir, spec);
-    let installed =
-        crate::transcribe::local::parakeet::ParakeetModelPaths::new(dir.clone()).is_complete();
+    let (installed, reported_path) = match &spec.artifact {
+        LocalArtifact::TarBz2 { .. } => {
+            let installed =
+                crate::transcribe::local::parakeet::ParakeetModelPaths::new(dir.clone())
+                    .is_complete();
+            (installed, installed.then(|| dir.clone()))
+        }
+        LocalArtifact::DirectFile { .. } => {
+            let path = direct_file_path(&app_data_dir, spec);
+            let installed = path.as_ref().map(|p| p.exists()).unwrap_or(false);
+            (installed, installed.then(|| path.unwrap()))
+        }
+    };
     Ok(LocalModelStatus {
         id: spec.id.into(),
         installed,
-        path: installed.then(|| dir.to_string_lossy().into_owned()),
+        path: reported_path.map(|p| p.to_string_lossy().into_owned()),
     })
 }
 
@@ -209,11 +222,7 @@ pub async fn download_local_model(
     let path = local_download::install_model(&app, &http, &app_data_dir, &spec)
         .await
         .map_err(|e| e.to_string())?;
-    // Invalidate any cached engine so the next pipeline run reloads from disk.
-    {
-        let mut guard = state.parakeet_engine.lock().unwrap();
-        *guard = None;
-    }
+    invalidate_engine_caches(&state, &spec.id);
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -232,11 +241,26 @@ pub fn delete_local_model(
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("Delete model failed: {}", e))?;
     }
-    {
+    invalidate_engine_caches(&state, &model_id);
+    Ok(())
+}
+
+/// Drop cached engines whose backing file may have just changed on disk so the
+/// next pipeline run reloads from the new bytes. Cheap: we don't know which
+/// engine is which, so when in doubt we clear both.
+fn invalidate_engine_caches(state: &AppState, model_id: &str) {
+    if model_id.starts_with("parakeet") {
         let mut guard = state.parakeet_engine.lock().unwrap();
         *guard = None;
+    } else if model_id.starts_with("llama") {
+        let mut guard = state.local_llm.lock().unwrap();
+        *guard = None;
+    } else {
+        let mut p = state.parakeet_engine.lock().unwrap();
+        *p = None;
+        let mut l = state.local_llm.lock().unwrap();
+        *l = None;
     }
-    Ok(())
 }
 
 #[tauri::command]

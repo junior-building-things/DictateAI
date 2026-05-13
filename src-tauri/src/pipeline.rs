@@ -9,7 +9,9 @@ use crate::error::AppError;
 use crate::error::AppResult;
 use crate::paste;
 use crate::processing_mode::{self, SPEECH_MODEL_PARAKEET_LOCAL};
+use crate::rewrite::local_llm::LocalLlmEngine;
 use crate::rewrite::{alibaba, gemini, local_cleanup, openai, prompt};
+use crate::transcribe::local::download::{find_model, direct_file_path, LLAMA_3_2_1B_INSTRUCT_Q4KM};
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING};
 use crate::transcribe::api::{self as speech_api, SpeechApiSettings};
 use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
@@ -388,6 +390,42 @@ async fn run_inner(
                 }
             }
         }
+        "Local" => match ensure_local_llm(app, state) {
+            Ok(engine) => {
+                let sys = system_prompt.clone();
+                let usr = user_message.clone();
+                match tokio::task::spawn_blocking(move || engine.rewrite(&sys, &usr)).await {
+                    Ok(Ok(text)) => {
+                        ensure_run_current(state, run_id)?;
+                        log::info!(
+                            "Local LLM rewrite completed in {:.2}s",
+                            rewrite_started_at.elapsed().as_secs_f64()
+                        );
+                        (text, "local-llm".to_string())
+                    }
+                    Ok(Err(error)) => {
+                        ensure_run_current(state, run_id)?;
+                        log::error!(
+                            "Local LLM rewrite failed, falling back to raw text: {}",
+                            error
+                        );
+                        let _ = app.emit("rewrite-error", error.to_string());
+                        (raw_text.clone(), "raw-transcription".to_string())
+                    }
+                    Err(join) => {
+                        ensure_run_current(state, run_id)?;
+                        return Err(AppError::Config(format!(
+                            "Local LLM task join failed: {}",
+                            join
+                        )));
+                    }
+                }
+            }
+            Err(error) => {
+                emit_missing_rewrite_key(app, &error.to_string());
+                (raw_text.clone(), "raw-transcription".to_string())
+            }
+        },
         _ => (
             local_cleanup::rewrite(&raw_text, local_cleanup_options),
             "local-cleanup".to_string(),
@@ -437,6 +475,37 @@ async fn run_inner(
     );
     log::info!("Pipeline complete: \"{}\" -> \"{}\"", raw_text, rewritten);
     Ok(())
+}
+
+fn ensure_local_llm(app: &AppHandle, state: &AppState) -> AppResult<Arc<LocalLlmEngine>> {
+    {
+        let guard = state.local_llm.lock().unwrap();
+        if let Some(engine) = guard.as_ref() {
+            return Ok(Arc::clone(engine));
+        }
+    }
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Config(format!("App data dir error: {}", e)))?;
+    let spec = find_model(LLAMA_3_2_1B_INSTRUCT_Q4KM.id)
+        .ok_or_else(|| AppError::Config("Local LLM spec not registered.".into()))?;
+    let model_path = direct_file_path(&app_data_dir, spec).ok_or_else(|| {
+        AppError::Config("Local LLM spec is not a direct-file artifact.".into())
+    })?;
+
+    let load_started = Instant::now();
+    let engine = LocalLlmEngine::load(model_path)?;
+    log::info!(
+        "Loaded local LLM in {:.2}s",
+        load_started.elapsed().as_secs_f64()
+    );
+    let engine = Arc::new(engine);
+
+    let mut guard = state.local_llm.lock().unwrap();
+    *guard = Some(Arc::clone(&engine));
+    Ok(engine)
 }
 
 fn ensure_parakeet_engine(app: &AppHandle, state: &AppState) -> AppResult<Arc<ParakeetEngine>> {

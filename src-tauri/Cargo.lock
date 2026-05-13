@@ -925,6 +925,7 @@ dependencies = [
  "chrono",
  "core-graphics 0.24.0",
  "cpal",
+ "encoding_rs",
  "enigo",
  "flate2",
  "futures-util",

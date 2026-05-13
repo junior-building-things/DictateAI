@@ -70,5 +70,8 @@ flate2 = "1"
 bzip2 = "0.4"
 tar = "0.4"
 
+# UTF-8 decoding for llama.cpp token output
+encoding_rs = "0.8"
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

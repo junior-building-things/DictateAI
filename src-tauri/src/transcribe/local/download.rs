@@ -7,33 +7,60 @@ use tokio::io::AsyncWriteExt;
 
 use crate::error::{AppError, AppResult};
 
-/// One installable on-device STT model.
+/// How the model is packaged at the source URL.
+#[derive(Debug, Clone)]
+pub enum LocalArtifact {
+    /// A `.tar.bz2` whose top-level directory is `archive_root`. We strip that
+    /// prefix when extracting so files land directly under `<models>/<id>/`.
+    TarBz2 { archive_root: &'static str },
+    /// A single file (typically a `.gguf` for LLMs) saved as `<models>/<id>/<filename>`.
+    DirectFile { filename: &'static str },
+}
+
+/// One installable on-device model (STT or LLM).
 #[derive(Debug, Clone)]
 pub struct LocalModelSpec {
     /// Stable id used in settings (e.g. `parakeet-tdt-0.6b-v2-int8`).
     pub id: &'static str,
     /// User-facing label shown in the model picker.
     pub label: &'static str,
-    /// Source archive (currently `.tar.bz2`).
+    /// Source URL to download from.
     pub url: &'static str,
-    /// Top-level directory name inside the archive. We strip this prefix when
-    /// extracting so the model lives at `<models>/<id>/`.
-    pub archive_root: &'static str,
+    pub artifact: LocalArtifact,
 }
 
 pub const PARAKEET_TDT_06B_V2_INT8: LocalModelSpec = LocalModelSpec {
     id: "parakeet-tdt-0.6b-v2-int8",
     label: "Parakeet TDT 0.6B v2 (int8)",
     url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2",
-    archive_root: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    artifact: LocalArtifact::TarBz2 {
+        archive_root: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    },
+};
+
+pub const LLAMA_3_2_1B_INSTRUCT_Q4KM: LocalModelSpec = LocalModelSpec {
+    id: "llama-3.2-1b-instruct-q4km",
+    label: "Llama 3.2 1B Instruct (Q4_K_M)",
+    url: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+    artifact: LocalArtifact::DirectFile {
+        filename: "model.gguf",
+    },
 };
 
 pub fn known_models() -> &'static [LocalModelSpec] {
-    &[PARAKEET_TDT_06B_V2_INT8]
+    &[PARAKEET_TDT_06B_V2_INT8, LLAMA_3_2_1B_INSTRUCT_Q4KM]
 }
 
 pub fn find_model(id: &str) -> Option<&'static LocalModelSpec> {
     known_models().iter().find(|m| m.id == id)
+}
+
+/// For `DirectFile` artifacts, the on-disk path to the downloaded file.
+pub fn direct_file_path(app_data_dir: &Path, spec: &LocalModelSpec) -> Option<PathBuf> {
+    match &spec.artifact {
+        LocalArtifact::DirectFile { filename } => Some(model_dir(app_data_dir, spec).join(filename)),
+        LocalArtifact::TarBz2 { .. } => None,
+    }
 }
 
 /// Resolve `<app_data_dir>/models/<spec.id>` — the destination for a model's
@@ -42,11 +69,10 @@ pub fn model_dir(app_data_dir: &Path, spec: &LocalModelSpec) -> PathBuf {
     app_data_dir.join("models").join(spec.id)
 }
 
-/// Download + extract `spec` under `app_data_dir/models/`. Emits
-/// `local-model-progress` with `{ id, phase, bytes_done, bytes_total }` so the
-/// frontend can render a progress bar. Idempotent — if the target dir already
-/// has all expected files the caller should skip this entirely; we don't
-/// re-check here.
+/// Download `spec` under `app_data_dir/models/`. For `TarBz2`, extract and
+/// strip the wrapper directory. For `DirectFile`, save the body at
+/// `<models>/<id>/<filename>`. Emits `local-model-progress` events with
+/// `{ id, phase, bytes_done, bytes_total }`.
 pub async fn install_model(
     app: &AppHandle,
     http: &reqwest::Client,
@@ -56,11 +82,49 @@ pub async fn install_model(
     let models_dir = app_data_dir.join("models");
     fs::create_dir_all(&models_dir)
         .map_err(|e| AppError::Config(format!("Create models dir failed: {}", e)))?;
+    let target_dir = models_dir.join(spec.id);
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| AppError::Config(format!("Create target dir failed: {}", e)))?;
 
-    let archive_path = models_dir.join(format!("{}.tar.bz2", spec.id));
-    let final_dir = models_dir.join(spec.id);
+    match &spec.artifact {
+        LocalArtifact::TarBz2 { archive_root } => {
+            let archive_path = models_dir.join(format!("{}.tar.bz2", spec.id));
+            download_to_file(app, http, spec, &archive_path).await?;
 
-    // Phase 1: download into archive_path
+            emit_progress(app, spec, "extracting", 0, None);
+            let archive_path_cloned = archive_path.clone();
+            let models_dir_cloned = models_dir.clone();
+            let archive_root = archive_root.to_string();
+            let target_name = spec.id.to_string();
+            tokio::task::spawn_blocking(move || {
+                extract_tar_bz2_stripping_root(
+                    &archive_path_cloned,
+                    &models_dir_cloned,
+                    &archive_root,
+                    &target_name,
+                )
+            })
+            .await
+            .map_err(|e| AppError::Config(format!("Extraction task join failed: {}", e)))??;
+
+            let _ = fs::remove_file(&archive_path);
+        }
+        LocalArtifact::DirectFile { filename } => {
+            let dest = target_dir.join(filename);
+            download_to_file(app, http, spec, &dest).await?;
+        }
+    }
+
+    emit_progress(app, spec, "ready", 0, None);
+    Ok(target_dir)
+}
+
+async fn download_to_file(
+    app: &AppHandle,
+    http: &reqwest::Client,
+    spec: &LocalModelSpec,
+    dest: &Path,
+) -> AppResult<()> {
     emit_progress(app, spec, "downloading", 0, None);
     let response = http
         .get(spec.url)
@@ -72,46 +136,23 @@ pub async fn install_model(
 
     let total = response.content_length();
     let mut downloaded: u64 = 0;
-    let mut file = tokio::fs::File::create(&archive_path)
+    let mut file = tokio::fs::File::create(dest)
         .await
-        .map_err(|e| AppError::Config(format!("Create archive file failed: {}", e)))?;
+        .map_err(|e| AppError::Config(format!("Create file failed: {}", e)))?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk =
             chunk.map_err(|e| AppError::Config(format!("Model download stream error: {}", e)))?;
         file.write_all(&chunk)
             .await
-            .map_err(|e| AppError::Config(format!("Write archive failed: {}", e)))?;
+            .map_err(|e| AppError::Config(format!("Write failed: {}", e)))?;
         downloaded += chunk.len() as u64;
         emit_progress(app, spec, "downloading", downloaded, total);
     }
     file.flush()
         .await
-        .map_err(|e| AppError::Config(format!("Flush archive failed: {}", e)))?;
-    drop(file);
-
-    // Phase 2: extract (sync, run on blocking pool)
-    emit_progress(app, spec, "extracting", 0, None);
-    let archive_path_cloned = archive_path.clone();
-    let models_dir_cloned = models_dir.clone();
-    let archive_root = spec.archive_root.to_string();
-    let target_name = spec.id.to_string();
-    tokio::task::spawn_blocking(move || {
-        extract_tar_bz2_stripping_root(
-            &archive_path_cloned,
-            &models_dir_cloned,
-            &archive_root,
-            &target_name,
-        )
-    })
-    .await
-    .map_err(|e| AppError::Config(format!("Extraction task join failed: {}", e)))??;
-
-    // Phase 3: clean up archive
-    let _ = fs::remove_file(&archive_path);
-    emit_progress(app, spec, "ready", 0, None);
-
-    Ok(final_dir)
+        .map_err(|e| AppError::Config(format!("Flush failed: {}", e)))?;
+    Ok(())
 }
 
 fn emit_progress(

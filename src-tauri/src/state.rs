@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
+use crate::rewrite::local_llm::LocalLlmEngine;
 use crate::transcribe::local::parakeet::ParakeetEngine;
 
 pub const STATE_IDLE: u8 = 0;
@@ -18,6 +19,8 @@ pub struct AppState {
     /// load once on first use and reuse across pipeline runs. Reset to `None`
     /// when the model is deleted or replaced.
     pub parakeet_engine: Mutex<Option<Arc<ParakeetEngine>>>,
+    /// Lazily-loaded local LLM (llama.cpp). ~770 MB for the default model.
+    pub local_llm: Mutex<Option<Arc<LocalLlmEngine>>>,
 }
 
 impl AppState {
@@ -28,6 +31,7 @@ impl AppState {
             recording_state: AtomicU8::new(STATE_IDLE),
             run_generation: AtomicU64::new(0),
             parakeet_engine: Mutex::new(None),
+            local_llm: Mutex::new(None),
         }
     }
 
