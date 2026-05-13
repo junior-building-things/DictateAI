@@ -59,19 +59,15 @@ struct Helper {
             emitError("model unavailable", exitCode: 3)
         }
 
-        // FoundationModels has no formal "system" role — we just concat the
-        // instructions into the user prompt with a blank-line separator,
-        // which matches Apple's sample-code pattern.
-        let prompt: String
-        if input.system.isEmpty {
-            prompt = input.user
-        } else {
-            prompt = "\(input.system)\n\n\(input.user)"
-        }
-
+        // Pass the user's configured system prompt through LanguageModelSession's
+        // `instructions:` parameter so the model treats it as persistent system
+        // guidance rather than just more user content. When no system prompt is
+        // configured, fall back to an empty Instructions block.
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt)
+            let session = LanguageModelSession {
+                input.system
+            }
+            let response = try await session.respond(to: input.user)
             FileHandle.standardOutput.write(response.content.data(using: .utf8) ?? Data())
         } catch {
             emitError("inference failed: \(error)", exitCode: 1)
