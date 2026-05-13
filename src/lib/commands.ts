@@ -95,6 +95,22 @@ export const validateNvidiaConfig = (baseUrl: string, apiKey: string) =>
 export const validateAlibabaApiKey = (apiKey: string) =>
   invoke<boolean>("validate_alibaba_api_key", { apiKey });
 
+// Local models (on-device STT + LLM)
+export interface LocalModelStatus {
+  id: string;
+  installed: boolean;
+  path: string | null;
+}
+
+export const localModelStatus = (modelId: string) =>
+  invoke<LocalModelStatus>("local_model_status", { modelId });
+
+export const downloadLocalModel = (modelId: string) =>
+  invoke<string>("download_local_model", { modelId });
+
+export const deleteLocalModel = (modelId: string) =>
+  invoke<void>("delete_local_model", { modelId });
+
 // App State
 export const getAppState = () =>
   invoke<string>("get_app_state");

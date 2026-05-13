@@ -1,5 +1,10 @@
-export type SpeechProvider = "Deepgram" | "Google" | "OpenAI" | "Alibaba";
-export type RewriteProvider = "OpenAI" | "Google" | "Alibaba";
+export type SpeechProvider = "Deepgram" | "Google" | "OpenAI" | "Alibaba" | "Local";
+export type RewriteProvider = "OpenAI" | "Google" | "Alibaba" | "Local";
+
+/// Local-engine model IDs that pair with the "Local" provider above.
+/// Kept in sync with the Rust-side `LocalModelSpec.id` constants.
+export const PARAKEET_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v2-int8";
+export const LLAMA_LOCAL_MODEL_ID = "llama-3.2-1b-instruct-q4km";
 
 export interface ModelOption {
   label: string;
@@ -76,6 +81,19 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
       },
     },
   ],
+  Local: [
+    {
+      label: "parakeet-tdt-0.6b-v2-int8",
+      setting: "parakeet-local",
+      description:
+        "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
+      metrics: {
+        latency: "100-300 ms",
+        accuracy: "5-7% WER",
+        cost: "Free (on-device)",
+      },
+    },
+  ],
 };
 
 const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
@@ -132,6 +150,19 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
         latency: "0.5-1.5 s typical (depends on GPU)",
         accuracy: "60-120 tokens/s",
         cost: "$0.0000105/req",
+      },
+    },
+  ],
+  Local: [
+    {
+      label: "llama-3.2-1b-instruct-q4km",
+      setting: "local-llm",
+      description:
+        "Llama 3.2 1B Instruct (Q4_K_M) via llama.cpp with Metal acceleration. Runs offline.",
+      metrics: {
+        latency: "300-700 ms",
+        accuracy: "100-200 tokens/s",
+        cost: "Free (on-device)",
       },
     },
   ],

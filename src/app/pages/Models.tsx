@@ -24,11 +24,14 @@ import {
   getSpeechModelOption,
   getSpeechModelOptions,
   type ModelMetrics,
+  LLAMA_LOCAL_MODEL_ID,
+  PARAKEET_LOCAL_MODEL_ID,
   rewriteProviderOptions,
   speechProviderOptions,
   type RewriteProvider,
   type SpeechProvider,
 } from "../../lib/modelCatalog";
+import LocalModelCard from "../../components/LocalModelCard";
 import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { cn } from "../../lib/utils";
@@ -112,6 +115,10 @@ export const Models = () => {
         return Boolean(openAiKey.trim());
       case "Alibaba":
         return Boolean(alibabaKey.trim());
+      case "Local":
+        // The pipeline surfaces a clear error if the model isn't installed;
+        // no extra credentials are needed for local engines.
+        return true;
     }
   };
 
@@ -123,6 +130,8 @@ export const Models = () => {
         return Boolean(geminiKey.trim());
       case "Alibaba":
         return Boolean(alibabaKey.trim());
+      case "Local":
+        return true;
     }
   };
 
@@ -696,6 +705,8 @@ function renderSpeechCredentials({
           />
         </>
       );
+    case "Local":
+      return <LocalParakeetCard />;
   }
 }
 
@@ -769,5 +780,65 @@ function renderRewriteCredentials({
           />
         </>
       );
+    case "Local":
+      return (
+        <LocalModelCard
+          modelId={LLAMA_LOCAL_MODEL_ID}
+          title="Llama 3.2 1B Instruct (Q4_K_M)"
+          subtitle="On-device rewrite via llama.cpp + Metal. Downloaded once from HuggingFace, then runs offline."
+          approxSizeMb={770}
+        />
+      );
   }
+}
+
+function LocalParakeetCard() {
+  const [streaming, setStreaming] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSetting("parakeet_streaming")
+      .catch(() => "true")
+      .then((value) => {
+        if (!cancelled) setStreaming(value === "true");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleStreaming = async (next: boolean) => {
+    setStreaming(next);
+    try {
+      await saveSetting("parakeet_streaming", next ? "true" : "false");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+      setStreaming(!next);
+    }
+  };
+
+  return (
+    <LocalModelCard
+      modelId={PARAKEET_LOCAL_MODEL_ID}
+      title="Parakeet TDT 0.6B v2 (int8)"
+      subtitle="On-device speech recognition via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon."
+      approxSizeMb={600}
+      extras={
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+          <div className="space-y-0.5">
+            <div className="text-sm font-semibold text-white">Stream partial transcripts</div>
+            <p className="text-[11px] text-neutral-400">
+              Re-run the recognizer on a rolling buffer while you speak so text appears in the overlay before you release the hotkey.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={streaming}
+            onChange={(e) => void toggleStreaming(e.target.checked)}
+            className="h-4 w-4 accent-blue-500"
+          />
+        </label>
+      }
+    />
+  );
 }
