@@ -252,7 +252,7 @@ fn invalidate_engine_caches(state: &AppState, model_id: &str) {
     if model_id.starts_with("parakeet") {
         let mut guard = state.parakeet_engine.lock().unwrap();
         *guard = None;
-    } else if model_id.starts_with("llama") {
+    } else if model_id.starts_with("llama") || model_id.starts_with("gemma") {
         let mut guard = state.local_llm.lock().unwrap();
         *guard = None;
     } else {

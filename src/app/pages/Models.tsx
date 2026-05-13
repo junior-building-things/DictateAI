@@ -19,12 +19,13 @@ import {
 import {
   defaultRewriteModel,
   defaultSpeechModel,
+  GEMMA_LOCAL_MODEL_ID,
   getRewriteModelOption,
   getRewriteModelOptions,
   getSpeechModelOption,
   getSpeechModelOptions,
-  type ModelMetrics,
   LLAMA_LOCAL_MODEL_ID,
+  type ModelMetrics,
   PARAKEET_LOCAL_MODEL_ID,
   rewriteProviderOptions,
   speechProviderOptions,
@@ -378,20 +379,24 @@ export const Models = () => {
         />
 
         <div>
-          {renderRewriteCredentials({
-            t,
-            provider: models.rewriteProvider,
-            openAiKey,
-            setOpenAiKey,
-            geminiKey,
-            setGeminiKey,
-            alibabaKey,
-            setAlibabaKey,
-            action,
-            saveGemini,
-            saveAlibaba,
-            saveOpenAi,
-          })}
+          {models.rewriteProvider === "Local" ? (
+            <LocalRewriteCard selectedSetting={selectedRewriteModel.setting} />
+          ) : (
+            renderRewriteCredentials({
+              t,
+              provider: models.rewriteProvider,
+              openAiKey,
+              setOpenAiKey,
+              geminiKey,
+              setGeminiKey,
+              alibabaKey,
+              setAlibabaKey,
+              action,
+              saveGemini,
+              saveAlibaba,
+              saveOpenAi,
+            })
+          )}
         </div>
       </section>
     </div>
@@ -781,16 +786,41 @@ function renderRewriteCredentials({
         </>
       );
     case "Local":
-      return (
-        <LocalModelCard
-          modelId={LLAMA_LOCAL_MODEL_ID}
-          title="Llama 3.2 1B Instruct (Q4_K_M)"
-          subtitle="On-device rewrite via llama.cpp + Metal. Downloaded once from HuggingFace, then runs offline."
-          approxSizeMb={770}
-        />
-      );
+      return null;
   }
 }
+
+function LocalRewriteCard({ selectedSetting }: { selectedSetting: string }) {
+  const meta = LOCAL_REWRITE_META[selectedSetting] ?? LOCAL_REWRITE_META[LLAMA_LOCAL_MODEL_ID];
+  return (
+    <LocalModelCard
+      modelId={meta.modelId}
+      title={meta.title}
+      subtitle={meta.subtitle}
+      approxSizeMb={meta.approxSizeMb}
+    />
+  );
+}
+
+const LOCAL_REWRITE_META: Record<
+  string,
+  { modelId: string; title: string; subtitle: string; approxSizeMb: number }
+> = {
+  [LLAMA_LOCAL_MODEL_ID]: {
+    modelId: LLAMA_LOCAL_MODEL_ID,
+    title: "Llama 3.2 1B Instruct (Q4_K_M)",
+    subtitle:
+      "On-device rewrite via llama.cpp + Metal. Downloaded once from HuggingFace, then runs offline.",
+    approxSizeMb: 770,
+  },
+  [GEMMA_LOCAL_MODEL_ID]: {
+    modelId: GEMMA_LOCAL_MODEL_ID,
+    title: "Google Gemma 3 1B IT (Q4_K_M)",
+    subtitle:
+      "On-device rewrite via llama.cpp + Metal using Google's Gemma 3 1B Instruct model. Downloaded once from HuggingFace.",
+    approxSizeMb: 770,
+  },
+};
 
 function LocalParakeetCard() {
   const [streaming, setStreaming] = useState(true);

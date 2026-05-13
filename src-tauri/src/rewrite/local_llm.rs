@@ -35,14 +35,37 @@ fn backend() -> AppResult<&'static LlamaBackend> {
 /// created per `rewrite` call so KV-cache state never leaks between requests.
 /// Inference is serialized with a Mutex — we only ever run one rewrite at a
 /// time anyway.
+/// Which chat template a model expects. Different model families wrap turns
+/// with different special tokens; tokenizing with the wrong template silently
+/// degrades output quality, so we keep this explicit per spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatTemplate {
+    /// Llama 3 / 3.1 / 3.2 family — `<|start_header_id|>...<|eot_id|>`.
+    Llama3,
+    /// Gemma 2 / 3 family — `<start_of_turn>user|model<end_of_turn>`. No
+    /// system role; we prepend system instructions to the user turn.
+    Gemma3,
+}
+
+/// Pick the chat template for a given `LocalModelSpec.id`. Defaults to Llama3
+/// so unknown ids degrade gracefully.
+pub fn template_for_spec(spec_id: &str) -> ChatTemplate {
+    if spec_id.starts_with("gemma-") {
+        ChatTemplate::Gemma3
+    } else {
+        ChatTemplate::Llama3
+    }
+}
+
 pub struct LocalLlmEngine {
     model: LlamaModel,
+    template: ChatTemplate,
     inference_lock: Mutex<()>,
     model_path: PathBuf,
 }
 
 impl LocalLlmEngine {
-    pub fn load(model_path: PathBuf) -> AppResult<Self> {
+    pub fn load(model_path: PathBuf, template: ChatTemplate) -> AppResult<Self> {
         if !model_path.exists() {
             return Err(AppError::Config(format!(
                 "Local LLM model not found at {}",
@@ -56,6 +79,7 @@ impl LocalLlmEngine {
             .map_err(|e| AppError::Config(format!("Load local LLM model failed: {}", e)))?;
         Ok(Self {
             model,
+            template,
             inference_lock: Mutex::new(()),
             model_path,
         })
@@ -73,7 +97,7 @@ impl LocalLlmEngine {
             .lock()
             .map_err(|_| AppError::Config("Local LLM mutex poisoned".into()))?;
 
-        let prompt = build_llama3_prompt(system_prompt, user_message);
+        let prompt = build_prompt(self.template, system_prompt, user_message);
         let backend = backend()?;
 
         let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(CTX_SIZE));
@@ -136,14 +160,25 @@ impl LocalLlmEngine {
     }
 }
 
-/// Llama 3 / 3.1 / 3.2 chat template. BOS is added by `AddBos::Always` during
-/// tokenization, so we omit `<|begin_of_text|>` here.
-fn build_llama3_prompt(system_prompt: &str, user_message: &str) -> String {
-    format!(
-        "<|start_header_id|>system<|end_header_id|>\n\n{sys}<|eot_id|>\
-         <|start_header_id|>user<|end_header_id|>\n\n{usr}<|eot_id|>\
-         <|start_header_id|>assistant<|end_header_id|>\n\n",
-        sys = system_prompt,
-        usr = user_message,
-    )
+/// Build the model-specific chat prompt. BOS is added by `AddBos::Always`
+/// during tokenization, so the leading BOS token is omitted from each
+/// template.
+fn build_prompt(template: ChatTemplate, system_prompt: &str, user_message: &str) -> String {
+    match template {
+        ChatTemplate::Llama3 => format!(
+            "<|start_header_id|>system<|end_header_id|>\n\n{sys}<|eot_id|>\
+             <|start_header_id|>user<|end_header_id|>\n\n{usr}<|eot_id|>\
+             <|start_header_id|>assistant<|end_header_id|>\n\n",
+            sys = system_prompt,
+            usr = user_message,
+        ),
+        // Gemma has no system role; per the official template, fold the
+        // system instruction into the first user turn separated by a blank
+        // line.
+        ChatTemplate::Gemma3 => format!(
+            "<start_of_turn>user\n{sys}\n\n{usr}<end_of_turn>\n<start_of_turn>model\n",
+            sys = system_prompt,
+            usr = user_message,
+        ),
+    }
 }

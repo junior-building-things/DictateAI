@@ -47,8 +47,21 @@ pub const LLAMA_3_2_1B_INSTRUCT_Q4KM: LocalModelSpec = LocalModelSpec {
     },
 };
 
+pub const GEMMA_3_1B_IT_Q4KM: LocalModelSpec = LocalModelSpec {
+    id: "gemma-3-1b-it-q4km",
+    label: "Gemma 3 1B IT (Q4_K_M)",
+    url: "https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/resolve/main/google_gemma-3-1b-it-Q4_K_M.gguf",
+    artifact: LocalArtifact::DirectFile {
+        filename: "model.gguf",
+    },
+};
+
 pub fn known_models() -> &'static [LocalModelSpec] {
-    &[PARAKEET_TDT_06B_V2_INT8, LLAMA_3_2_1B_INSTRUCT_Q4KM]
+    &[
+        PARAKEET_TDT_06B_V2_INT8,
+        LLAMA_3_2_1B_INSTRUCT_Q4KM,
+        GEMMA_3_1B_IT_Q4KM,
+    ]
 }
 
 pub fn find_model(id: &str) -> Option<&'static LocalModelSpec> {

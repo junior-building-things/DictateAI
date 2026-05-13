@@ -19,8 +19,10 @@ pub struct AppState {
     /// load once on first use and reuse across pipeline runs. Reset to `None`
     /// when the model is deleted or replaced.
     pub parakeet_engine: Mutex<Option<Arc<ParakeetEngine>>>,
-    /// Lazily-loaded local LLM (llama.cpp). ~770 MB for the default model.
-    pub local_llm: Mutex<Option<Arc<LocalLlmEngine>>>,
+    /// Lazily-loaded local LLM (llama.cpp). Keyed by `LocalModelSpec.id` so
+    /// the cache is invalidated when the user switches between e.g. Llama 3.2
+    /// and Gemma 3.
+    pub local_llm: Mutex<Option<(String, Arc<LocalLlmEngine>)>>,
 }
 
 impl AppState {

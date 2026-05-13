@@ -5,6 +5,7 @@ export type RewriteProvider = "OpenAI" | "Google" | "Alibaba" | "Local";
 /// Kept in sync with the Rust-side `LocalModelSpec.id` constants.
 export const PARAKEET_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v2-int8";
 export const LLAMA_LOCAL_MODEL_ID = "llama-3.2-1b-instruct-q4km";
+export const GEMMA_LOCAL_MODEL_ID = "gemma-3-1b-it-q4km";
 
 export interface ModelOption {
   label: string;
@@ -156,9 +157,20 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
   Local: [
     {
       label: "llama-3.2-1b-instruct-q4km",
-      setting: "local-llm",
+      setting: "llama-3.2-1b-instruct-q4km",
       description:
         "Llama 3.2 1B Instruct (Q4_K_M) via llama.cpp with Metal acceleration. Runs offline.",
+      metrics: {
+        latency: "300-700 ms",
+        accuracy: "100-200 tokens/s",
+        cost: "Free (on-device)",
+      },
+    },
+    {
+      label: "gemma-3-1b-it-q4km",
+      setting: "gemma-3-1b-it-q4km",
+      description:
+        "Google Gemma 3 1B IT (Q4_K_M) via llama.cpp with Metal acceleration. Runs offline.",
       metrics: {
         latency: "300-700 ms",
         accuracy: "100-200 tokens/s",
@@ -185,6 +197,9 @@ const legacyRewriteAliases: Record<string, string> = {
   "gpt-4.1-nano": "gpt-5-nano",
   "qwen3-8b": "qwen2.5-7b-instruct",
   "Rule-based Cleanup": firstRewriteSetting(DEFAULT_REWRITE_PROVIDER),
+  // Initial local-LLM rollout shipped a placeholder setting value;
+  // migrate it to the explicit Llama spec id.
+  "local-llm": "llama-3.2-1b-instruct-q4km",
 };
 
 export const speechProviderOptions = Object.keys(speechCatalog) as SpeechProvider[];

@@ -9,9 +9,9 @@ use crate::error::AppError;
 use crate::error::AppResult;
 use crate::paste;
 use crate::processing_mode::{self, SPEECH_MODEL_PARAKEET_LOCAL};
-use crate::rewrite::local_llm::LocalLlmEngine;
+use crate::rewrite::local_llm::{self, LocalLlmEngine};
 use crate::rewrite::{alibaba, gemini, local_cleanup, openai, prompt};
-use crate::transcribe::local::download::{find_model, direct_file_path, LLAMA_3_2_1B_INSTRUCT_Q4KM};
+use crate::transcribe::local::download::{direct_file_path, find_model, LLAMA_3_2_1B_INSTRUCT_Q4KM};
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING};
 use crate::transcribe::api::{self as speech_api, SpeechApiSettings};
 use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
@@ -478,10 +478,26 @@ async fn run_inner(
 }
 
 fn ensure_local_llm(app: &AppHandle, state: &AppState) -> AppResult<Arc<LocalLlmEngine>> {
+    // Resolve which LLM spec the user has selected via the rewrite_model
+    // setting. We accept a few legacy values that older builds may have
+    // written so existing installs don't break on upgrade.
+    let requested_id = {
+        let db = state.db.lock().unwrap();
+        let raw =
+            settings::get(&db, "rewrite_model").unwrap_or_else(|_| String::new());
+        match raw.as_str() {
+            // Legacy stub from the original single-model rollout.
+            "" | "local-llm" => LLAMA_3_2_1B_INSTRUCT_Q4KM.id.to_string(),
+            other => other.to_string(),
+        }
+    };
+
     {
         let guard = state.local_llm.lock().unwrap();
-        if let Some(engine) = guard.as_ref() {
-            return Ok(Arc::clone(engine));
+        if let Some((cached_id, engine)) = guard.as_ref() {
+            if cached_id == &requested_id {
+                return Ok(Arc::clone(engine));
+            }
         }
     }
 
@@ -489,22 +505,26 @@ fn ensure_local_llm(app: &AppHandle, state: &AppState) -> AppResult<Arc<LocalLlm
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Config(format!("App data dir error: {}", e)))?;
-    let spec = find_model(LLAMA_3_2_1B_INSTRUCT_Q4KM.id)
-        .ok_or_else(|| AppError::Config("Local LLM spec not registered.".into()))?;
+    let spec = find_model(&requested_id).ok_or_else(|| {
+        AppError::Config(format!("Local LLM spec `{}` is not registered.", requested_id))
+    })?;
     let model_path = direct_file_path(&app_data_dir, spec).ok_or_else(|| {
         AppError::Config("Local LLM spec is not a direct-file artifact.".into())
     })?;
 
+    let template = local_llm::template_for_spec(spec.id);
     let load_started = Instant::now();
-    let engine = LocalLlmEngine::load(model_path)?;
+    let engine = LocalLlmEngine::load(model_path, template)?;
     log::info!(
-        "Loaded local LLM in {:.2}s",
+        "Loaded local LLM `{}` ({:?}) in {:.2}s",
+        spec.id,
+        template,
         load_started.elapsed().as_secs_f64()
     );
     let engine = Arc::new(engine);
 
     let mut guard = state.local_llm.lock().unwrap();
-    *guard = Some(Arc::clone(&engine));
+    *guard = Some((requested_id, Arc::clone(&engine)));
     Ok(engine)
 }
 
