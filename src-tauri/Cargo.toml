@@ -40,9 +40,18 @@ serde_json = "1"
 enigo = { version = "0.2", features = ["serde"] }
 tauri-plugin-process = "2"
 
+# On-device speech recognition (Parakeet / Whisper / Zipformer via sherpa-onnx).
+# `download-binaries` pulls a prebuilt sherpa-onnx lib at build time so we don't
+# need a system install.
+sherpa-rs = { version = "0.6", features = ["download-binaries"] }
+
 # macOS native CGEvent for keyboard simulation (thread-safe unlike HIToolbox)
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"
+
+# Local LLM rewrite via llama.cpp with Metal acceleration. macOS-only for now;
+# extend to other targets when we add cross-platform builds.
+llama-cpp-2 = { version = "0.1", features = ["metal"] }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }

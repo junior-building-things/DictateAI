@@ -22,6 +22,7 @@ Desktop app for push-to-talk transcription with optional Gemini cleanup and auto
 - Node.js + npm
 - Rust toolchain
 - Tauri prerequisites for your OS
+- `cmake` (for the bundled llama.cpp build used by local LLM rewrite — `brew install cmake` on macOS)
 - macOS users: microphone + accessibility permissions are required for full behavior
 
 ## Development
