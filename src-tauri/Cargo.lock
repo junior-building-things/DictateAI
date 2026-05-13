@@ -921,6 +921,7 @@ name = "dictateai"
 version = "1.0.7"
 dependencies = [
  "base64 0.22.1",
+ "bzip2",
  "chrono",
  "core-graphics 0.24.0",
  "cpal",
@@ -937,6 +938,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sherpa-rs",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

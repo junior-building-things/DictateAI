@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{timeout, Duration, Instant};
 
@@ -6,10 +8,11 @@ use crate::db::{history, settings, vocabulary};
 use crate::error::AppError;
 use crate::error::AppResult;
 use crate::paste;
-use crate::processing_mode;
+use crate::processing_mode::{self, SPEECH_MODEL_PARAKEET_LOCAL};
 use crate::rewrite::{alibaba, gemini, local_cleanup, openai, prompt};
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING};
 use crate::transcribe::api::{self as speech_api, SpeechApiSettings};
+use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
 
 const API_SPEECH_TIMEOUT_SECONDS: u64 = 8;
 const API_REWRITE_TIMEOUT_SECONDS: u64 = 10;
@@ -107,23 +110,33 @@ async fn run_inner(
     };
 
     let speech_started_at = Instant::now();
-    let raw_text = timeout(
-        Duration::from_secs(API_SPEECH_TIMEOUT_SECONDS),
-        speech_api::transcribe(
-            &state.http_client,
-            &audio_data,
-            &language,
-            &selected_speech_model,
-            speech_settings,
-        ),
-    )
-    .await
-    .map_err(|_| {
-        AppError::Config(format!(
-            "Speech transcription timed out after {} seconds.",
-            API_SPEECH_TIMEOUT_SECONDS
-        ))
-    })??;
+    let raw_text = if selected_speech_model == SPEECH_MODEL_PARAKEET_LOCAL {
+        let engine = ensure_parakeet_engine(app, state)?;
+        let audio_owned = audio_data.clone();
+        tokio::task::spawn_blocking(move || engine.transcribe(&audio_owned))
+            .await
+            .map_err(|e| {
+                AppError::Config(format!("Parakeet inference task join failed: {}", e))
+            })??
+    } else {
+        timeout(
+            Duration::from_secs(API_SPEECH_TIMEOUT_SECONDS),
+            speech_api::transcribe(
+                &state.http_client,
+                &audio_data,
+                &language,
+                &selected_speech_model,
+                speech_settings,
+            ),
+        )
+        .await
+        .map_err(|_| {
+            AppError::Config(format!(
+                "Speech transcription timed out after {} seconds.",
+                API_SPEECH_TIMEOUT_SECONDS
+            ))
+        })??
+    };
     let speech_model_used = selected_speech_model.clone();
     log::info!(
         "Speech phase completed in {:.2}s",
@@ -424,6 +437,33 @@ async fn run_inner(
     );
     log::info!("Pipeline complete: \"{}\" -> \"{}\"", raw_text, rewritten);
     Ok(())
+}
+
+fn ensure_parakeet_engine(app: &AppHandle, state: &AppState) -> AppResult<Arc<ParakeetEngine>> {
+    {
+        let guard = state.parakeet_engine.lock().unwrap();
+        if let Some(engine) = guard.as_ref() {
+            return Ok(Arc::clone(engine));
+        }
+    }
+
+    let model_dir = processing_mode::parakeet_local_dir(app).ok_or_else(|| {
+        AppError::Config(
+            "Could not resolve app data dir for Parakeet model. Reinstall the app.".into(),
+        )
+    })?;
+
+    let load_started = Instant::now();
+    let engine = ParakeetEngine::load(&ParakeetModelPaths::new(model_dir))?;
+    log::info!(
+        "Loaded Parakeet model in {:.2}s",
+        load_started.elapsed().as_secs_f64()
+    );
+    let engine = Arc::new(engine);
+
+    let mut guard = state.parakeet_engine.lock().unwrap();
+    *guard = Some(Arc::clone(&engine));
+    Ok(engine)
 }
 
 fn ensure_run_current(state: &AppState, run_id: u64) -> AppResult<()> {

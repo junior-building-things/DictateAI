@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::db::{history, settings, vocabulary};
@@ -9,6 +9,7 @@ use crate::rewrite::gemini;
 use crate::rewrite::prompt;
 use crate::state::{AppState, STATE_IDLE};
 use crate::transcribe::api;
+use crate::transcribe::local::download::{self as local_download, find_model};
 use crate::transcribe::model_manager;
 
 // --- Settings ---
@@ -163,6 +164,79 @@ pub fn get_available_models(state: State<AppState>) -> Vec<model_manager::ModelI
     let db = state.db.lock().unwrap();
     let language = settings::get(&db, "language").unwrap_or_else(|_| "en".into());
     model_manager::available_models(&language)
+}
+
+// --- Local STT models ---
+
+#[derive(serde::Serialize)]
+pub struct LocalModelStatus {
+    pub id: String,
+    pub installed: bool,
+    pub path: Option<String>,
+}
+
+#[tauri::command]
+pub fn local_model_status(app: AppHandle, model_id: String) -> Result<LocalModelStatus, String> {
+    let spec = find_model(&model_id).ok_or_else(|| format!("Unknown model id: {}", model_id))?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("App data dir error: {}", e))?;
+    let dir = local_download::model_dir(&app_data_dir, spec);
+    let installed =
+        crate::transcribe::local::parakeet::ParakeetModelPaths::new(dir.clone()).is_complete();
+    Ok(LocalModelStatus {
+        id: spec.id.into(),
+        installed,
+        path: installed.then(|| dir.to_string_lossy().into_owned()),
+    })
+}
+
+#[tauri::command]
+pub async fn download_local_model(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<String, String> {
+    let spec = find_model(&model_id)
+        .ok_or_else(|| format!("Unknown model id: {}", model_id))?
+        .clone();
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("App data dir error: {}", e))?;
+    let http = state.http_client.clone();
+    let path = local_download::install_model(&app, &http, &app_data_dir, &spec)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Invalidate any cached engine so the next pipeline run reloads from disk.
+    {
+        let mut guard = state.parakeet_engine.lock().unwrap();
+        *guard = None;
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn delete_local_model(
+    app: AppHandle,
+    state: State<AppState>,
+    model_id: String,
+) -> Result<(), String> {
+    let spec = find_model(&model_id).ok_or_else(|| format!("Unknown model id: {}", model_id))?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("App data dir error: {}", e))?;
+    let dir = local_download::model_dir(&app_data_dir, spec);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("Delete model failed: {}", e))?;
+    }
+    {
+        let mut guard = state.parakeet_engine.lock().unwrap();
+        *guard = None;
+    }
+    Ok(())
 }
 
 #[tauri::command]

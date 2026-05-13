@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
+
+use crate::transcribe::local::parakeet::ParakeetEngine;
 
 pub const STATE_IDLE: u8 = 0;
 pub const STATE_RECORDING: u8 = 1;
@@ -12,6 +14,10 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     pub recording_state: AtomicU8,
     pub run_generation: AtomicU64,
+    /// Lazily-loaded local Parakeet engine. ~300 MB of ONNX weights, so we
+    /// load once on first use and reuse across pipeline runs. Reset to `None`
+    /// when the model is deleted or replaced.
+    pub parakeet_engine: Mutex<Option<Arc<ParakeetEngine>>>,
 }
 
 impl AppState {
@@ -21,6 +27,7 @@ impl AppState {
             http_client: reqwest::Client::new(),
             recording_state: AtomicU8::new(STATE_IDLE),
             run_generation: AtomicU64::new(0),
+            parakeet_engine: Mutex::new(None),
         }
     }
 

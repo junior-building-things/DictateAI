@@ -66,5 +66,9 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 flate2 = "1"
 
+# tar.bz2 extraction for downloaded local-STT models (sherpa-onnx asr-models)
+bzip2 = "0.4"
+tar = "0.4"
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
