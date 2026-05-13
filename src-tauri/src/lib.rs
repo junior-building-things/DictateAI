@@ -158,6 +158,11 @@ pub fn run() {
                 }
             }
 
+            // Pre-warm any local engines the user has selected so the first
+            // dictation doesn't pay model-load latency. Background task —
+            // app keeps starting normally if this is slow.
+            pipeline::prewarm(handle.clone());
+
             log::info!("App setup complete");
             Ok(())
         })

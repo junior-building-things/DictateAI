@@ -513,6 +513,53 @@ async fn run_inner(
     Ok(())
 }
 
+/// Eagerly load the engines the user has selected so the first dictation
+/// after launch doesn't pay the cold-start cost (~300-1000 ms depending on
+/// model). Best-effort: anything that isn't ready (missing model files,
+/// user on cloud STT/rewrite, etc.) is silently skipped.
+///
+/// Runs on a blocking thread because both Parakeet and llama.cpp loads do
+/// substantial synchronous I/O.
+pub fn prewarm(app: AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+
+        let (speech_model, rewrite_provider, rewrite_model) = {
+            let db = state.db.lock().unwrap();
+            (
+                settings::get(&db, "speech_model").unwrap_or_default(),
+                settings::get(&db, "rewrite_provider").unwrap_or_default(),
+                settings::get(&db, "rewrite_model").unwrap_or_default(),
+            )
+        };
+
+        if let Some(spec) = parakeet_spec_for(&speech_model) {
+            let started = Instant::now();
+            match ensure_parakeet_engine(&app, &state, spec) {
+                Ok(_) => log::info!(
+                    "Pre-warmed Parakeet `{}` in {:.2}s",
+                    spec.id,
+                    started.elapsed().as_secs_f64()
+                ),
+                Err(e) => log::info!("Parakeet pre-warm skipped: {}", e),
+            }
+        }
+
+        // Apple FM's "model" is OS-resident — nothing to load on our end.
+        if rewrite_provider == "Local" && !rewrite_model.starts_with("apple-fm") {
+            let started = Instant::now();
+            match ensure_local_llm(&app, &state) {
+                Ok(_) => log::info!(
+                    "Pre-warmed local LLM `{}` in {:.2}s",
+                    rewrite_model,
+                    started.elapsed().as_secs_f64()
+                ),
+                Err(e) => log::info!("Local LLM pre-warm skipped: {}", e),
+            }
+        }
+    });
+}
+
 fn ensure_local_llm(app: &AppHandle, state: &AppState) -> AppResult<Arc<LocalLlmEngine>> {
     // Resolve which LLM spec the user has selected via the rewrite_model
     // setting. We accept a few legacy values that older builds may have

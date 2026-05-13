@@ -223,6 +223,9 @@ pub async fn download_local_model(
         .await
         .map_err(|e| e.to_string())?;
     invalidate_engine_caches(&state, &spec.id);
+    // Warm the freshly-installed model in the background so the first
+    // dictation after install doesn't pay the cold-load cost.
+    crate::pipeline::prewarm(app.clone());
     Ok(path.to_string_lossy().into_owned())
 }
 
