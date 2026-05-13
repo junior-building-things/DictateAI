@@ -1,20 +1,23 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::audio::capture::AudioCaptureHandle;
 use crate::audio::feedback;
 use crate::db::settings;
 use crate::error::AppResult;
-use crate::processing_mode;
+use crate::processing_mode::{self, SPEECH_MODEL_PARAKEET_LOCAL};
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING, STATE_RECORDING};
+use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
+use crate::transcribe::local::streaming::{self, StreamingHandle};
 
 const MIN_RECORDING_DURATION_MS: u128 = 300;
 
 pub struct HotkeyState {
     pub press_time: Mutex<Option<Instant>>,
     pub audio_capture: AudioCaptureHandle,
+    pub streaming: Mutex<Option<StreamingHandle>>,
 }
 
 impl HotkeyState {
@@ -22,6 +25,7 @@ impl HotkeyState {
         Ok(Self {
             press_time: Mutex::new(None),
             audio_capture: AudioCaptureHandle::new()?,
+            streaming: Mutex::new(None),
         })
     }
 }
@@ -68,7 +72,67 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
         if sound_enabled(app_state) {
             let _ = feedback::play_error();
         }
+        return;
     }
+
+    maybe_start_streaming(app, hotkey_state, app_state);
+}
+
+/// If the user picked Parakeet local + streaming is enabled, kick off the
+/// background task that emits `transcription-partial` events while recording.
+/// Best-effort: any failure here just means no partials.
+fn maybe_start_streaming(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppState) {
+    let (speech_model, streaming_enabled) = {
+        let db = app_state.db.lock().unwrap();
+        let model = settings::get(&db, "speech_model").unwrap_or_default();
+        let enabled = settings::get(&db, "parakeet_streaming")
+            .unwrap_or_else(|_| "true".into())
+            == "true";
+        (model, enabled)
+    };
+
+    if speech_model != SPEECH_MODEL_PARAKEET_LOCAL || !streaming_enabled {
+        return;
+    }
+
+    let engine = match resolve_or_load_parakeet(app, app_state) {
+        Ok(e) => e,
+        Err(e) => {
+            log::debug!("streaming engine not available: {}", e);
+            return;
+        }
+    };
+
+    let handle = streaming::start(app.clone(), hotkey_state.audio_capture.clone(), engine);
+    let mut guard = hotkey_state.streaming.lock().unwrap();
+    if let Some(existing) = guard.replace(handle) {
+        existing.stop();
+    }
+}
+
+fn resolve_or_load_parakeet(
+    app: &AppHandle,
+    app_state: &AppState,
+) -> AppResult<Arc<ParakeetEngine>> {
+    {
+        let guard = app_state.parakeet_engine.lock().unwrap();
+        if let Some(e) = guard.as_ref() {
+            return Ok(Arc::clone(e));
+        }
+    }
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| crate::error::AppError::Config(format!("App data dir: {}", e)))?;
+    let spec_id = "parakeet-tdt-0.6b-v2-int8";
+    let spec = crate::transcribe::local::download::find_model(spec_id).ok_or_else(|| {
+        crate::error::AppError::Config("Parakeet spec not registered".into())
+    })?;
+    let dir = crate::transcribe::local::download::model_dir(&app_data_dir, spec);
+    let engine = Arc::new(ParakeetEngine::load(&ParakeetModelPaths::new(dir))?);
+    let mut guard = app_state.parakeet_engine.lock().unwrap();
+    *guard = Some(Arc::clone(&engine));
+    Ok(engine)
 }
 
 pub fn on_released(
@@ -79,6 +143,12 @@ pub fn on_released(
     // Only process if we're recording
     if !app_state.is_recording() {
         return None;
+    }
+
+    // Signal the streaming task (if any) to stop so it doesn't keep firing
+    // partial events after the final transcription lands.
+    if let Some(handle) = hotkey_state.streaming.lock().unwrap().take() {
+        handle.stop();
     }
 
     // Check duration - ignore very short presses
