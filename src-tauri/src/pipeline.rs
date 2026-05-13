@@ -10,6 +10,8 @@ use crate::error::AppResult;
 use crate::paste;
 use crate::processing_mode;
 use crate::rewrite::local_llm::{self, LocalLlmEngine};
+#[cfg(target_os = "macos")]
+use crate::rewrite::apple_fm;
 use crate::rewrite::{alibaba, gemini, local_cleanup, openai, prompt};
 use crate::transcribe::local::download::{
     direct_file_path, find_model, parakeet_spec_for, LLAMA_3_2_1B_INSTRUCT_Q4KM,
@@ -390,6 +392,38 @@ async fn run_inner(
                         )));
                     }
                 }
+            }
+        }
+        "Local" if rewrite_model.starts_with("apple-fm") => {
+            #[cfg(target_os = "macos")]
+            {
+                match apple_fm::rewrite(&system_prompt, &user_message).await {
+                    Ok(text) => {
+                        ensure_run_current(state, run_id)?;
+                        log::info!(
+                            "Apple FM rewrite completed in {:.2}s",
+                            rewrite_started_at.elapsed().as_secs_f64()
+                        );
+                        (text, "apple-fm-system".to_string())
+                    }
+                    Err(error) => {
+                        ensure_run_current(state, run_id)?;
+                        log::error!(
+                            "Apple FM rewrite failed, falling back to raw text: {}",
+                            error
+                        );
+                        let _ = app.emit("rewrite-error", error.to_string());
+                        (raw_text.clone(), "raw-transcription".to_string())
+                    }
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                emit_missing_rewrite_key(
+                    app,
+                    "Apple Foundation Models is macOS-only. Using raw transcription.",
+                );
+                (raw_text.clone(), "raw-transcription".to_string())
             }
         }
         "Local" => match ensure_local_llm(app, state) {

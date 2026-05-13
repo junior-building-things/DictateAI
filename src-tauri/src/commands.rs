@@ -226,6 +226,30 @@ pub async fn download_local_model(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Probe Apple's Foundation Models framework. Returns one of:
+///   "available"   — model ready to use
+///   "unavailable" — helper exists but the OS says the model isn't ready
+///                   (no Apple Intelligence, not eligible, etc.)
+///   "not-built"   — helper wasn't compiled (no swiftc / pre-macOS-26)
+///   "unsupported" — not running on macOS at all
+#[tauri::command]
+pub async fn apple_fm_availability() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use crate::rewrite::apple_fm::{check_availability, Availability};
+        Ok(match check_availability().await {
+            Availability::Available => "available",
+            Availability::NotBuilt => "not-built",
+            Availability::Unavailable => "unavailable",
+        }
+        .to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok("unsupported".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn delete_local_model(
     app: AppHandle,

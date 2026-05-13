@@ -111,6 +111,15 @@ export const downloadLocalModel = (modelId: string) =>
 export const deleteLocalModel = (modelId: string) =>
   invoke<void>("delete_local_model", { modelId });
 
+export type AppleFmAvailability =
+  | "available"
+  | "unavailable"
+  | "not-built"
+  | "unsupported";
+
+export const appleFmAvailability = () =>
+  invoke<AppleFmAvailability>("apple_fm_availability");
+
 // App State
 export const getAppState = () =>
   invoke<string>("get_app_state");

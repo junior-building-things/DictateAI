@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  appleFmAvailability,
+  type AppleFmAvailability,
   getSetting,
   saveSetting,
   validateAlibabaApiKey,
@@ -17,6 +19,7 @@ import {
   validateOpenAiApiKey,
 } from "../../lib/commands";
 import {
+  APPLE_FM_REWRITE_ID,
   defaultRewriteModel,
   defaultSpeechModel,
   GEMMA_LOCAL_MODEL_ID,
@@ -797,6 +800,9 @@ function renderRewriteCredentials({
 }
 
 function LocalRewriteCard({ selectedSetting }: { selectedSetting: string }) {
+  if (selectedSetting === APPLE_FM_REWRITE_ID) {
+    return <AppleFmCard />;
+  }
   const meta = LOCAL_REWRITE_META[selectedSetting] ?? LOCAL_REWRITE_META[LLAMA_LOCAL_MODEL_ID];
   return (
     <LocalModelCard
@@ -806,6 +812,99 @@ function LocalRewriteCard({ selectedSetting }: { selectedSetting: string }) {
       approxSizeMb={meta.approxSizeMb}
     />
   );
+}
+
+function AppleFmCard() {
+  const [status, setStatus] = useState<AppleFmAvailability | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const refresh = async () => {
+    setChecking(true);
+    try {
+      setStatus(await appleFmAvailability());
+    } catch {
+      setStatus("unavailable");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const { tone, headline, detail } = describeAppleFmStatus(status);
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white">Apple Foundation Models</h3>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}
+            >
+              {headline}
+            </span>
+          </div>
+          <p className="text-xs leading-5 text-neutral-400">
+            On-device LLM provided by macOS 26+ via the FoundationModels framework.
+            Runs on the Neural Engine, shares weights with the OS, no model download required.
+          </p>
+          <p className="text-[11px] text-neutral-500">{detail}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={checking}
+          className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-neutral-300 transition hover:bg-white/[0.1] disabled:opacity-50"
+        >
+          {checking ? "Checking..." : "Recheck"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function describeAppleFmStatus(status: AppleFmAvailability | null): {
+  tone: string;
+  headline: string;
+  detail: string;
+} {
+  switch (status) {
+    case "available":
+      return {
+        tone: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+        headline: "Ready",
+        detail: "Apple Intelligence is enabled and the model is reachable.",
+      };
+    case "unavailable":
+      return {
+        tone: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+        headline: "Not ready",
+        detail:
+          "macOS reports the system model isn't reachable. Make sure Apple Intelligence is enabled in System Settings and the model has finished downloading.",
+      };
+    case "not-built":
+      return {
+        tone: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+        headline: "Helper missing",
+        detail:
+          "The Swift helper wasn't compiled at build time (needs swiftc + macOS 26 SDK). Rebuild the app to enable Apple FM.",
+      };
+    case "unsupported":
+      return {
+        tone: "border-neutral-500/20 bg-neutral-500/10 text-neutral-400",
+        headline: "macOS only",
+        detail: "Apple Foundation Models is only available on macOS 26+.",
+      };
+    case null:
+      return {
+        tone: "border-white/10 bg-white/[0.05] text-neutral-400",
+        headline: "Checking",
+        detail: "Probing the Foundation Models framework...",
+      };
+  }
 }
 
 const LOCAL_REWRITE_META: Record<

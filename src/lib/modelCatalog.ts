@@ -9,6 +9,7 @@ export const PARAKEET_V3_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v3-int8";
 export const PARAKEET_LOCAL_MODEL_ID = PARAKEET_V2_LOCAL_MODEL_ID;
 export const LLAMA_LOCAL_MODEL_ID = "llama-3.2-1b-instruct-q4km";
 export const GEMMA_LOCAL_MODEL_ID = "gemma-3-1b-it-q4km";
+export const APPLE_FM_REWRITE_ID = "apple-fm-system";
 
 export interface ModelOption {
   label: string;
@@ -188,6 +189,17 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
       metrics: {
         latency: "300-700 ms",
         accuracy: "100-200 tokens/s",
+        cost: "Free (on-device)",
+      },
+    },
+    {
+      label: "apple-fm-system",
+      setting: "apple-fm-system",
+      description:
+        "Apple's on-device foundation model (macOS 26+). Runs on the Neural Engine via the FoundationModels framework — no model download, no cold start.",
+      metrics: {
+        latency: "200-500 ms",
+        accuracy: "Always-resident",
         cost: "Free (on-device)",
       },
     },

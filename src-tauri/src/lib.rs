@@ -180,6 +180,7 @@ pub fn run() {
             commands::local_model_status,
             commands::download_local_model,
             commands::delete_local_model,
+            commands::apple_fm_availability,
             commands::validate_gemini_api_key,
             commands::validate_openai_api_key,
             commands::validate_deepgram_api_key,
