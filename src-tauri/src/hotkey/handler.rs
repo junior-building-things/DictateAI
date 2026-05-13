@@ -7,8 +7,9 @@ use crate::audio::capture::AudioCaptureHandle;
 use crate::audio::feedback;
 use crate::db::settings;
 use crate::error::AppResult;
-use crate::processing_mode::{self, SPEECH_MODEL_PARAKEET_LOCAL};
+use crate::processing_mode;
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING, STATE_RECORDING};
+use crate::transcribe::local::download::{parakeet_spec_for, LocalModelSpec};
 use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
 use crate::transcribe::local::streaming::{self, StreamingHandle};
 
@@ -91,11 +92,14 @@ fn maybe_start_streaming(app: &AppHandle, hotkey_state: &HotkeyState, app_state:
         (model, enabled)
     };
 
-    if speech_model != SPEECH_MODEL_PARAKEET_LOCAL || !streaming_enabled {
+    let Some(parakeet_spec) = parakeet_spec_for(&speech_model) else {
+        return;
+    };
+    if !streaming_enabled {
         return;
     }
 
-    let engine = match resolve_or_load_parakeet(app, app_state) {
+    let engine = match resolve_or_load_parakeet(app, app_state, parakeet_spec) {
         Ok(e) => e,
         Err(e) => {
             log::debug!("streaming engine not available: {}", e);
@@ -113,25 +117,24 @@ fn maybe_start_streaming(app: &AppHandle, hotkey_state: &HotkeyState, app_state:
 fn resolve_or_load_parakeet(
     app: &AppHandle,
     app_state: &AppState,
+    spec: &LocalModelSpec,
 ) -> AppResult<Arc<ParakeetEngine>> {
     {
         let guard = app_state.parakeet_engine.lock().unwrap();
-        if let Some(e) = guard.as_ref() {
-            return Ok(Arc::clone(e));
+        if let Some((cached_id, e)) = guard.as_ref() {
+            if cached_id == spec.id {
+                return Ok(Arc::clone(e));
+            }
         }
     }
     let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| crate::error::AppError::Config(format!("App data dir: {}", e)))?;
-    let spec_id = "parakeet-tdt-0.6b-v2-int8";
-    let spec = crate::transcribe::local::download::find_model(spec_id).ok_or_else(|| {
-        crate::error::AppError::Config("Parakeet spec not registered".into())
-    })?;
     let dir = crate::transcribe::local::download::model_dir(&app_data_dir, spec);
     let engine = Arc::new(ParakeetEngine::load(&ParakeetModelPaths::new(dir))?);
     let mut guard = app_state.parakeet_engine.lock().unwrap();
-    *guard = Some(Arc::clone(&engine));
+    *guard = Some((spec.id.to_string(), Arc::clone(&engine)));
     Ok(engine)
 }
 

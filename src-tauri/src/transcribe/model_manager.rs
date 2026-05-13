@@ -45,11 +45,19 @@ pub fn available_models(_language: &str) -> Vec<ModelInfo> {
             size_mb: 0,
         },
         ModelInfo {
-            name: "parakeet-local".into(),
-            label: "Local (Parakeet)".into(),
+            name: "parakeet-tdt-0.6b-v2-int8".into(),
+            label: "Local (Parakeet v2)".into(),
             description: "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon."
                 .into(),
             filename: "parakeet-tdt-0.6b-v2-int8".into(),
+            size_mb: 600,
+        },
+        ModelInfo {
+            name: "parakeet-tdt-0.6b-v3-int8".into(),
+            label: "Local (Parakeet v3)".into(),
+            description: "On-device NVIDIA Parakeet TDT 0.6B v3 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon."
+                .into(),
+            filename: "parakeet-tdt-0.6b-v3-int8".into(),
             size_mb: 600,
         },
     ]

@@ -38,6 +38,15 @@ pub const PARAKEET_TDT_06B_V2_INT8: LocalModelSpec = LocalModelSpec {
     },
 };
 
+pub const PARAKEET_TDT_06B_V3_INT8: LocalModelSpec = LocalModelSpec {
+    id: "parakeet-tdt-0.6b-v3-int8",
+    label: "Parakeet TDT 0.6B v3 (int8)",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+    artifact: LocalArtifact::TarBz2 {
+        archive_root: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+    },
+};
+
 pub const LLAMA_3_2_1B_INSTRUCT_Q4KM: LocalModelSpec = LocalModelSpec {
     id: "llama-3.2-1b-instruct-q4km",
     label: "Llama 3.2 1B Instruct (Q4_K_M)",
@@ -59,9 +68,21 @@ pub const GEMMA_3_1B_IT_Q4KM: LocalModelSpec = LocalModelSpec {
 pub fn known_models() -> &'static [LocalModelSpec] {
     &[
         PARAKEET_TDT_06B_V2_INT8,
+        PARAKEET_TDT_06B_V3_INT8,
         LLAMA_3_2_1B_INSTRUCT_Q4KM,
         GEMMA_3_1B_IT_Q4KM,
     ]
+}
+
+/// Map a `speech_model` setting value to the registered Parakeet spec, if any.
+/// Returns `None` for non-Parakeet entries. Accepts the legacy `"parakeet-local"`
+/// value that earlier builds stored in `speech_model`.
+pub fn parakeet_spec_for(speech_model: &str) -> Option<&'static LocalModelSpec> {
+    match speech_model {
+        "parakeet-local" | "parakeet-tdt-0.6b-v2-int8" => Some(&PARAKEET_TDT_06B_V2_INT8),
+        "parakeet-tdt-0.6b-v3-int8" => Some(&PARAKEET_TDT_06B_V3_INT8),
+        _ => None,
+    }
 }
 
 pub fn find_model(id: &str) -> Option<&'static LocalModelSpec> {

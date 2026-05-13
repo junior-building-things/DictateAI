@@ -26,7 +26,8 @@ import {
   getSpeechModelOptions,
   LLAMA_LOCAL_MODEL_ID,
   type ModelMetrics,
-  PARAKEET_LOCAL_MODEL_ID,
+  PARAKEET_V2_LOCAL_MODEL_ID,
+  PARAKEET_V3_LOCAL_MODEL_ID,
   rewriteProviderOptions,
   speechProviderOptions,
   type RewriteProvider,
@@ -311,27 +312,31 @@ export const Models = () => {
         />
 
         <div>
-          {renderSpeechCredentials({
-            t,
-            provider: models.speechProvider,
-            deepgramKey,
-            setDeepgramKey,
-            googleSpeechKey,
-            setGoogleSpeechKey,
-            googleProjectId,
-            setGoogleProjectId,
-            googleRegion,
-            setGoogleRegion,
-            openAiKey,
-            setOpenAiKey,
-            alibabaKey,
-            setAlibabaKey,
-            action,
-            saveDeepgram,
-            saveGoogleSpeech,
-            saveOpenAi,
-            saveAlibaba,
-          })}
+          {models.speechProvider === "Local" ? (
+            <LocalParakeetCard selectedSetting={selectedSpeechModel.setting} />
+          ) : (
+            renderSpeechCredentials({
+              t,
+              provider: models.speechProvider,
+              deepgramKey,
+              setDeepgramKey,
+              googleSpeechKey,
+              setGoogleSpeechKey,
+              googleProjectId,
+              setGoogleProjectId,
+              googleRegion,
+              setGoogleRegion,
+              openAiKey,
+              setOpenAiKey,
+              alibabaKey,
+              setAlibabaKey,
+              action,
+              saveDeepgram,
+              saveGoogleSpeech,
+              saveOpenAi,
+              saveAlibaba,
+            })
+          )}
         </div>
       </section>
 
@@ -711,7 +716,8 @@ function renderSpeechCredentials({
         </>
       );
     case "Local":
-      return <LocalParakeetCard />;
+      // Rendered by the call site, which has selectedSpeechModel in scope.
+      return null;
   }
 }
 
@@ -822,7 +828,29 @@ const LOCAL_REWRITE_META: Record<
   },
 };
 
-function LocalParakeetCard() {
+const LOCAL_PARAKEET_META: Record<
+  string,
+  { modelId: string; title: string; subtitle: string; approxSizeMb: number }
+> = {
+  [PARAKEET_V2_LOCAL_MODEL_ID]: {
+    modelId: PARAKEET_V2_LOCAL_MODEL_ID,
+    title: "Parakeet TDT 0.6B v2 (int8)",
+    subtitle:
+      "On-device speech recognition via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
+    approxSizeMb: 600,
+  },
+  [PARAKEET_V3_LOCAL_MODEL_ID]: {
+    modelId: PARAKEET_V3_LOCAL_MODEL_ID,
+    title: "Parakeet TDT 0.6B v3 (int8)",
+    subtitle:
+      "Refresh of the v2 model with improved accuracy and multilingual support. Same offline, on-device inference path.",
+    approxSizeMb: 600,
+  },
+};
+
+function LocalParakeetCard({ selectedSetting }: { selectedSetting: string }) {
+  const meta =
+    LOCAL_PARAKEET_META[selectedSetting] ?? LOCAL_PARAKEET_META[PARAKEET_V2_LOCAL_MODEL_ID];
   const [streaming, setStreaming] = useState(true);
 
   useEffect(() => {
@@ -849,10 +877,10 @@ function LocalParakeetCard() {
 
   return (
     <LocalModelCard
-      modelId={PARAKEET_LOCAL_MODEL_ID}
-      title="Parakeet TDT 0.6B v2 (int8)"
-      subtitle="On-device speech recognition via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon."
-      approxSizeMb={600}
+      modelId={meta.modelId}
+      title={meta.title}
+      subtitle={meta.subtitle}
+      approxSizeMb={meta.approxSizeMb}
       extras={
         <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
           <div className="space-y-0.5">

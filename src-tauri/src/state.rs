@@ -16,9 +16,10 @@ pub struct AppState {
     pub recording_state: AtomicU8,
     pub run_generation: AtomicU64,
     /// Lazily-loaded local Parakeet engine. ~300 MB of ONNX weights, so we
-    /// load once on first use and reuse across pipeline runs. Reset to `None`
-    /// when the model is deleted or replaced.
-    pub parakeet_engine: Mutex<Option<Arc<ParakeetEngine>>>,
+    /// load once on first use and reuse across pipeline runs. Keyed by
+    /// `LocalModelSpec.id` so switching between v2 and v3 invalidates the
+    /// cache.
+    pub parakeet_engine: Mutex<Option<(String, Arc<ParakeetEngine>)>>,
     /// Lazily-loaded local LLM (llama.cpp). Keyed by `LocalModelSpec.id` so
     /// the cache is invalidated when the user switches between e.g. Llama 3.2
     /// and Gemma 3.

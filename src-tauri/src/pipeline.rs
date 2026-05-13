@@ -8,10 +8,12 @@ use crate::db::{history, settings, vocabulary};
 use crate::error::AppError;
 use crate::error::AppResult;
 use crate::paste;
-use crate::processing_mode::{self, SPEECH_MODEL_PARAKEET_LOCAL};
+use crate::processing_mode;
 use crate::rewrite::local_llm::{self, LocalLlmEngine};
 use crate::rewrite::{alibaba, gemini, local_cleanup, openai, prompt};
-use crate::transcribe::local::download::{direct_file_path, find_model, LLAMA_3_2_1B_INSTRUCT_Q4KM};
+use crate::transcribe::local::download::{
+    direct_file_path, find_model, parakeet_spec_for, LLAMA_3_2_1B_INSTRUCT_Q4KM,
+};
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING};
 use crate::transcribe::api::{self as speech_api, SpeechApiSettings};
 use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
@@ -112,8 +114,8 @@ async fn run_inner(
     };
 
     let speech_started_at = Instant::now();
-    let raw_text = if selected_speech_model == SPEECH_MODEL_PARAKEET_LOCAL {
-        let engine = ensure_parakeet_engine(app, state)?;
+    let raw_text = if let Some(parakeet_spec) = parakeet_spec_for(&selected_speech_model) {
+        let engine = ensure_parakeet_engine(app, state, parakeet_spec)?;
         let audio_owned = audio_data.clone();
         tokio::task::spawn_blocking(move || engine.transcribe(&audio_owned))
             .await
@@ -528,15 +530,21 @@ fn ensure_local_llm(app: &AppHandle, state: &AppState) -> AppResult<Arc<LocalLlm
     Ok(engine)
 }
 
-fn ensure_parakeet_engine(app: &AppHandle, state: &AppState) -> AppResult<Arc<ParakeetEngine>> {
+fn ensure_parakeet_engine(
+    app: &AppHandle,
+    state: &AppState,
+    spec: &crate::transcribe::local::download::LocalModelSpec,
+) -> AppResult<Arc<ParakeetEngine>> {
     {
         let guard = state.parakeet_engine.lock().unwrap();
-        if let Some(engine) = guard.as_ref() {
-            return Ok(Arc::clone(engine));
+        if let Some((cached_id, engine)) = guard.as_ref() {
+            if cached_id == spec.id {
+                return Ok(Arc::clone(engine));
+            }
         }
     }
 
-    let model_dir = processing_mode::parakeet_local_dir(app).ok_or_else(|| {
+    let model_dir = processing_mode::parakeet_spec_dir(app, spec).ok_or_else(|| {
         AppError::Config(
             "Could not resolve app data dir for Parakeet model. Reinstall the app.".into(),
         )
@@ -545,13 +553,14 @@ fn ensure_parakeet_engine(app: &AppHandle, state: &AppState) -> AppResult<Arc<Pa
     let load_started = Instant::now();
     let engine = ParakeetEngine::load(&ParakeetModelPaths::new(model_dir))?;
     log::info!(
-        "Loaded Parakeet model in {:.2}s",
+        "Loaded Parakeet model `{}` in {:.2}s",
+        spec.id,
         load_started.elapsed().as_secs_f64()
     );
     let engine = Arc::new(engine);
 
     let mut guard = state.parakeet_engine.lock().unwrap();
-    *guard = Some(Arc::clone(&engine));
+    *guard = Some((spec.id.to_string(), Arc::clone(&engine)));
     Ok(engine)
 }
 

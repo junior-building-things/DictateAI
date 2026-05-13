@@ -3,7 +3,10 @@ export type RewriteProvider = "OpenAI" | "Google" | "Alibaba" | "Local";
 
 /// Local-engine model IDs that pair with the "Local" provider above.
 /// Kept in sync with the Rust-side `LocalModelSpec.id` constants.
-export const PARAKEET_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v2-int8";
+export const PARAKEET_V2_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v2-int8";
+export const PARAKEET_V3_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v3-int8";
+/// Back-compat alias — earlier code imported this constant for the v2 model.
+export const PARAKEET_LOCAL_MODEL_ID = PARAKEET_V2_LOCAL_MODEL_ID;
 export const LLAMA_LOCAL_MODEL_ID = "llama-3.2-1b-instruct-q4km";
 export const GEMMA_LOCAL_MODEL_ID = "gemma-3-1b-it-q4km";
 
@@ -85,12 +88,23 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
   Local: [
     {
       label: "parakeet-tdt-0.6b-v2-int8",
-      setting: "parakeet-local",
+      setting: "parakeet-tdt-0.6b-v2-int8",
       description:
         "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
       metrics: {
         latency: "100-300 ms",
         accuracy: "5-7% WER",
+        cost: "Free (on-device)",
+      },
+    },
+    {
+      label: "parakeet-tdt-0.6b-v3-int8",
+      setting: "parakeet-tdt-0.6b-v3-int8",
+      description:
+        "On-device NVIDIA Parakeet TDT 0.6B v3 (int8). Refresh of v2 with improved accuracy and multilingual support.",
+      metrics: {
+        latency: "100-300 ms",
+        accuracy: "4-6% WER",
         cost: "Free (on-device)",
       },
     },
@@ -188,6 +202,8 @@ const legacySpeechAliases: Record<string, string> = {
   "nvidia-canary-qwen-2.5b": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
   "Local On-Device Speech": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
   "doubao-byteplus": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
+  // Earlier rollout shipped a placeholder setting — migrate to the v2 spec id.
+  "parakeet-local": "parakeet-tdt-0.6b-v2-int8",
 };
 
 const legacyRewriteAliases: Record<string, string> = {

@@ -2,14 +2,21 @@ use tauri::{AppHandle, Manager};
 
 use crate::db::settings;
 use crate::state::AppState;
-use crate::transcribe::local::download::{find_model, model_dir};
+use crate::transcribe::local::download::{model_dir, parakeet_spec_for, LocalModelSpec};
 use crate::transcribe::local::parakeet::ParakeetModelPaths;
-
-pub const SPEECH_MODEL_PARAKEET_LOCAL: &str = "parakeet-local";
-const PARAKEET_LOCAL_SPEC_ID: &str = "parakeet-tdt-0.6b-v2-int8";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModeResolution;
+
+/// Resolve the currently-selected Parakeet spec, if any. Returns `None` when
+/// the user is on a non-Parakeet speech model.
+pub fn selected_parakeet_spec(state: &AppState) -> Option<&'static LocalModelSpec> {
+    let speech_model = {
+        let db = state.db.lock().unwrap();
+        settings::get(&db, "speech_model").unwrap_or_default()
+    };
+    parakeet_spec_for(&speech_model)
+}
 
 pub fn resolve(app: &AppHandle, state: &AppState) -> Option<ModeResolution> {
     let (
@@ -44,23 +51,26 @@ pub fn resolve(app: &AppHandle, state: &AppState) -> Option<ModeResolution> {
         "doubao-byteplus" => {
             !doubao_access_token.trim().is_empty() && !doubao_app_id.trim().is_empty()
         }
-        SPEECH_MODEL_PARAKEET_LOCAL => parakeet_local_ready(app),
-        _ => false,
+        other => parakeet_spec_for(other)
+            .map(|spec| parakeet_spec_ready(app, spec))
+            .unwrap_or(false),
     };
 
     ready.then_some(ModeResolution)
 }
 
-/// True when the Parakeet model files are present on disk.
-pub fn parakeet_local_ready(app: &AppHandle) -> bool {
-    let Some(dir) = parakeet_local_dir(app) else {
+/// True when the requested Parakeet spec's model files are present on disk.
+pub fn parakeet_spec_ready(app: &AppHandle, spec: &LocalModelSpec) -> bool {
+    let Some(dir) = parakeet_spec_dir(app, spec) else {
         return false;
     };
     ParakeetModelPaths::new(dir).is_complete()
 }
 
-pub fn parakeet_local_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+pub fn parakeet_spec_dir(
+    app: &AppHandle,
+    spec: &LocalModelSpec,
+) -> Option<std::path::PathBuf> {
     let app_data_dir = app.path().app_data_dir().ok()?;
-    let spec = find_model(PARAKEET_LOCAL_SPEC_ID)?;
     Some(model_dir(&app_data_dir, spec))
 }
