@@ -1,6 +1,6 @@
 [package]
 name = "dictateai"
-version = "1.0.8"
+version = "1.0.9"
 description = "DictateAI desktop app"
 authors = ["you"]
 license = "MIT"
@@ -42,8 +42,10 @@ tauri-plugin-process = "2"
 
 # On-device speech recognition (Parakeet / Whisper / Zipformer via sherpa-onnx).
 # `download-binaries` pulls a prebuilt sherpa-onnx lib at build time so we don't
-# need a system install.
-sherpa-rs = { version = "0.6", features = ["download-binaries"] }
+# need a system install. `static` selects the static archive so onnxruntime is
+# linked into the binary — otherwise the bundled .app fails to launch with
+# "Library not loaded: @rpath/libonnxruntime.<ver>.dylib".
+sherpa-rs = { version = "0.6", features = ["download-binaries", "static"] }
 
 # macOS native CGEvent for keyboard simulation (thread-safe unlike HIToolbox)
 [target.'cfg(target_os = "macos")'.dependencies]
