@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "dictateai"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "base64 0.22.1",
  "bzip2",
