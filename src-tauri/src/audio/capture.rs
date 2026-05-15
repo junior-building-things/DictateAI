@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -7,6 +8,11 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crate::error::{AppError, AppResult};
 
 pub const TARGET_SAMPLE_RATE: u32 = 16000;
+
+// Pre-roll length kept in the rolling ring buffer. On hotkey press we prepend
+// this much of the most recent audio to the recording so the first syllable
+// isn't lost while cpal's stream was warming up (it already is — see below).
+const PREROLL_MS: u32 = 400;
 
 /// Commands sent to the audio thread
 enum AudioCommand {
@@ -67,53 +73,108 @@ impl AudioCaptureHandle {
     }
 }
 
-/// Runs on a dedicated thread — owns the cpal stream (which is !Send on macOS)
+/// Shared state between the cpal callback thread and the command thread.
+///
+/// `ring` is always being written to at the device sample rate, capped at
+/// `ring_cap` samples (~PREROLL_MS worth). `recording` holds samples since
+/// the last `Start` and is only appended to when `is_recording` is true.
+struct CaptureState {
+    ring: VecDeque<f32>,
+    ring_cap: usize,
+    recording: Vec<f32>,
+    is_recording: bool,
+}
+
+impl CaptureState {
+    fn new(sample_rate: u32) -> Self {
+        let ring_cap = (sample_rate as usize) * (PREROLL_MS as usize) / 1000;
+        Self {
+            ring: VecDeque::with_capacity(ring_cap),
+            ring_cap,
+            recording: Vec::new(),
+            is_recording: false,
+        }
+    }
+
+    fn push_mono(&mut self, samples: &[f32]) {
+        for &s in samples {
+            if self.ring.len() == self.ring_cap {
+                self.ring.pop_front();
+            }
+            self.ring.push_back(s);
+        }
+        if self.is_recording {
+            self.recording.extend_from_slice(samples);
+        }
+    }
+
+    fn begin_recording(&mut self) {
+        self.recording.clear();
+        // Seed with the rolling pre-roll so the leading syllable lands in the
+        // recording even though it was uttered before the keypress was handled.
+        self.recording.extend(self.ring.iter().copied());
+        self.is_recording = true;
+    }
+
+    fn end_recording(&mut self) -> Vec<f32> {
+        self.is_recording = false;
+        std::mem::take(&mut self.recording)
+    }
+}
+
+/// Runs on a dedicated thread — owns the cpal stream (which is !Send on macOS).
+/// The stream is opened once on first `Start` and kept alive for the rest of
+/// the app's lifetime so the rolling pre-roll buffer is always primed.
 #[allow(unused_assignments)]
 fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
-    let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    // We use an Option to hold the stream while recording
+    let mut state: Option<Arc<Mutex<CaptureState>>> = None;
     let mut _active_stream: Option<cpal::Stream> = None;
     let mut device_sample_rate: u32 = TARGET_SAMPLE_RATE;
 
     for cmd in cmd_rx.iter() {
         match cmd {
             AudioCommand::Start => {
-                // Clear buffer
-                {
-                    let mut buf = buffer.lock().unwrap();
-                    buf.clear();
-                }
-
-                match create_input_stream(&buffer) {
-                    Ok((stream, sample_rate)) => {
-                        device_sample_rate = sample_rate;
-                        if let Err(e) = stream.play() {
-                            log::error!("Failed to play stream: {}", e);
+                if _active_stream.is_none() {
+                    match create_input_stream() {
+                        Ok((stream, sample_rate, new_state)) => {
+                            device_sample_rate = sample_rate;
+                            if let Err(e) = stream.play() {
+                                log::error!("Failed to play stream: {}", e);
+                                continue;
+                            }
+                            state = Some(new_state);
+                            _active_stream = Some(stream);
+                            log::info!(
+                                "Audio stream opened (device rate: {}Hz, preroll: {}ms)",
+                                sample_rate,
+                                PREROLL_MS
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create input stream: {}", e);
                             continue;
                         }
-                        _active_stream = Some(stream);
-                        log::info!("Recording started (device rate: {}Hz)", sample_rate);
-                    }
-                    Err(e) => {
-                        log::error!("Failed to create input stream: {}", e);
                     }
                 }
+
+                if let Some(s) = state.as_ref() {
+                    let mut guard = s.lock().unwrap();
+                    guard.begin_recording();
+                }
+                log::info!("Recording started");
             }
             AudioCommand::Snapshot(result_tx) => {
-                let samples = {
-                    let buf = buffer.lock().unwrap();
-                    buf.clone()
-                };
+                let samples = state
+                    .as_ref()
+                    .map(|s| s.lock().unwrap().recording.clone())
+                    .unwrap_or_default();
                 let _ = result_tx.send(Ok((samples, device_sample_rate)));
             }
             AudioCommand::Stop(result_tx) => {
-                // Drop the stream to stop recording
-                _active_stream = None;
-
-                let samples = {
-                    let mut buf = buffer.lock().unwrap();
-                    std::mem::take(&mut *buf)
-                };
+                let samples = state
+                    .as_ref()
+                    .map(|s| s.lock().unwrap().end_recording())
+                    .unwrap_or_default();
 
                 log::info!(
                     "Recording stopped: {} samples at {}Hz",
@@ -139,7 +200,7 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
     }
 }
 
-fn create_input_stream(buffer: &Arc<Mutex<Vec<f32>>>) -> AppResult<(cpal::Stream, u32)> {
+fn create_input_stream() -> AppResult<(cpal::Stream, u32, Arc<Mutex<CaptureState>>)> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -165,26 +226,28 @@ fn create_input_stream(buffer: &Arc<Mutex<Vec<f32>>>) -> AppResult<(cpal::Stream
         sample_format
     );
 
-    let buffer_clone = Arc::clone(buffer);
+    let state = Arc::new(Mutex::new(CaptureState::new(sample_rate)));
     let err_fn = |err: cpal::StreamError| {
         log::error!("Audio stream error: {}", err);
     };
 
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => device
-            .build_input_stream(
-                &config.into(),
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    let mono: Vec<f32> = data.iter().step_by(channels).copied().collect();
-                    let mut buf = buffer_clone.lock().unwrap();
-                    buf.extend_from_slice(&mono);
-                },
-                err_fn,
-                None,
-            )
-            .map_err(|e| AppError::Audio(format!("Failed to build stream: {}", e)))?,
+    let stream = match sample_format {
+        cpal::SampleFormat::F32 => {
+            let state_cb = Arc::clone(&state);
+            device
+                .build_input_stream(
+                    &config.into(),
+                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                        let mono: Vec<f32> = data.iter().step_by(channels).copied().collect();
+                        state_cb.lock().unwrap().push_mono(&mono);
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|e| AppError::Audio(format!("Failed to build stream: {}", e)))?
+        }
         cpal::SampleFormat::I16 => {
-            let buffer_clone = Arc::clone(buffer);
+            let state_cb = Arc::clone(&state);
             device
                 .build_input_stream(
                     &config.into(),
@@ -194,8 +257,7 @@ fn create_input_stream(buffer: &Arc<Mutex<Vec<f32>>>) -> AppResult<(cpal::Stream
                             .step_by(channels)
                             .map(|&s| s as f32 / i16::MAX as f32)
                             .collect();
-                        let mut buf = buffer_clone.lock().unwrap();
-                        buf.extend_from_slice(&mono);
+                        state_cb.lock().unwrap().push_mono(&mono);
                     },
                     err_fn,
                     None,
@@ -210,7 +272,7 @@ fn create_input_stream(buffer: &Arc<Mutex<Vec<f32>>>) -> AppResult<(cpal::Stream
         }
     };
 
-    Ok((stream, sample_rate))
+    Ok((stream, sample_rate, state))
 }
 
 pub fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> AppResult<Vec<f32>> {
