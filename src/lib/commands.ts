@@ -95,6 +95,9 @@ export const validateNvidiaConfig = (baseUrl: string, apiKey: string) =>
 export const validateAlibabaApiKey = (apiKey: string) =>
   invoke<boolean>("validate_alibaba_api_key", { apiKey });
 
+export const validateGroqApiKey = (apiKey: string) =>
+  invoke<boolean>("validate_groq_api_key", { apiKey });
+
 // Local models (on-device STT + LLM)
 export interface LocalModelStatus {
   id: string;

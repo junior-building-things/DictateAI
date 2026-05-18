@@ -17,7 +17,6 @@ const PREROLL_MS: u32 = 400;
 /// Commands sent to the audio thread
 enum AudioCommand {
     Start,
-    Snapshot(mpsc::Sender<AppResult<(Vec<f32>, u32)>>),
     Stop(mpsc::Sender<AppResult<Vec<f32>>>),
 }
 
@@ -51,20 +50,6 @@ impl AudioCaptureHandle {
         let (result_tx, result_rx) = mpsc::channel();
         self.cmd_tx
             .send(AudioCommand::Stop(result_tx))
-            .map_err(|_| AppError::Audio("Audio thread not running".into()))?;
-
-        result_rx
-            .recv()
-            .map_err(|_| AppError::Audio("Audio thread did not respond".into()))?
-    }
-
-    /// Return a copy of the audio captured so far without stopping the stream.
-    /// Used by the streaming partial-transcript path. Samples are returned at
-    /// the device sample rate; the second tuple value is that rate.
-    pub fn snapshot(&self) -> AppResult<(Vec<f32>, u32)> {
-        let (result_tx, result_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(AudioCommand::Snapshot(result_tx))
             .map_err(|_| AppError::Audio("Audio thread not running".into()))?;
 
         result_rx
@@ -162,13 +147,6 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
                     guard.begin_recording();
                 }
                 log::info!("Recording started");
-            }
-            AudioCommand::Snapshot(result_tx) => {
-                let samples = state
-                    .as_ref()
-                    .map(|s| s.lock().unwrap().recording.clone())
-                    .unwrap_or_default();
-                let _ = result_tx.send(Ok((samples, device_sample_rate)));
             }
             AudioCommand::Stop(result_tx) => {
                 let samples = state

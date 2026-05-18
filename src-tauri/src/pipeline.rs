@@ -9,13 +9,10 @@ use crate::error::AppError;
 use crate::error::AppResult;
 use crate::paste;
 use crate::processing_mode;
-use crate::rewrite::local_llm::{self, LocalLlmEngine};
 #[cfg(target_os = "macos")]
 use crate::rewrite::apple_fm;
-use crate::rewrite::{alibaba, gemini, local_cleanup, openai, prompt};
-use crate::transcribe::local::download::{
-    direct_file_path, find_model, parakeet_spec_for, LLAMA_3_2_1B_INSTRUCT_Q4KM,
-};
+use crate::rewrite::{alibaba, gemini, groq, local_cleanup, openai, prompt};
+use crate::transcribe::local::download::parakeet_spec_for;
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING};
 use crate::transcribe::api::{self as speech_api, SpeechApiSettings};
 use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
@@ -31,16 +28,22 @@ pub async fn run(app: AppHandle, audio_data: Vec<f32>) -> AppResult<()> {
     state.set_state(STATE_PROCESSING);
     let _ = app.emit("state-changed", "processing");
 
-    // Switch overlay to "Rewriting..."
-    crate::overlay::show(&app, "rewriting");
-
     let result = run_inner(&app, &state, audio_data, run_id).await;
 
-    // Only the active run should own overlay cleanup.
+    // Only the active run should own state cleanup.
     if state.is_run_current(run_id) {
         state.set_state(STATE_IDLE);
         let _ = app.emit("state-changed", "idle");
-        crate::overlay::hide(&app);
+
+        // If the deliver step didn't consume the "Listening..." placeholder
+        // (failure, empty rewrite, early return), wipe it now so the user
+        // isn't left staring at it.
+        let leftover = state.pending_placeholder.lock().unwrap().take();
+        if let Some(len) = leftover {
+            if let Err(e) = paste::simulate::delete_placeholder(len) {
+                log::warn!("Could not delete recording placeholder: {}", e);
+            }
+        }
     }
 
     if let Err(ref e) = result {
@@ -167,6 +170,7 @@ async fn run_inner(
         spoken_language,
         openai_api_key,
         gemini_api_key,
+        groq_api_key,
         alibaba_api_key,
         alibaba_base_url,
         rewrite_provider,
@@ -206,6 +210,7 @@ async fn run_inner(
         let spoken_language = settings::get(&db, "language").unwrap_or_else(|_| "en".into());
         let openai_api_key = settings::get(&db, "speech_openai_api_key").unwrap_or_default();
         let gemini_api_key = settings::get(&db, "gemini_api_key").unwrap_or_default();
+        let groq_api_key = settings::get(&db, "groq_api_key").unwrap_or_default();
         let alibaba_api_key = settings::get(&db, "alibaba_api_key").unwrap_or_default();
         let alibaba_base_url = settings::get(&db, "alibaba_base_url")
             .unwrap_or_else(|_| "https://dashscope-intl.aliyuncs.com/compatible-mode/v1".into());
@@ -229,6 +234,7 @@ async fn run_inner(
             spoken_language,
             openai_api_key,
             gemini_api_key,
+            groq_api_key,
             alibaba_api_key,
             alibaba_base_url,
             rewrite_provider,
@@ -346,6 +352,50 @@ async fn run_inner(
                 }
             }
         }
+        "Groq" => {
+            if groq_api_key.trim().is_empty() {
+                emit_missing_rewrite_key(
+                    app,
+                    "Groq rewrite is selected, but no API key is configured. Using raw transcription.",
+                );
+                (raw_text.clone(), "raw-transcription".to_string())
+            } else {
+                match timeout(
+                    Duration::from_secs(API_REWRITE_TIMEOUT_SECONDS),
+                    groq::rewrite(
+                        &state.http_client,
+                        &groq_api_key,
+                        &rewrite_model,
+                        &system_prompt,
+                        &user_message,
+                    ),
+                )
+                .await
+                {
+                    Ok(Ok(text)) => {
+                        ensure_run_current(state, run_id)?;
+                        log::info!(
+                            "Groq rewrite completed in {:.2}s",
+                            rewrite_started_at.elapsed().as_secs_f64()
+                        );
+                        (text, rewrite_model.clone())
+                    }
+                    Ok(Err(error)) => {
+                        ensure_run_current(state, run_id)?;
+                        log::error!("Groq rewrite failed, falling back to raw text: {}", error);
+                        let _ = app.emit("rewrite-error", error.to_string());
+                        (raw_text.clone(), "raw-transcription".to_string())
+                    }
+                    Err(_) => {
+                        ensure_run_current(state, run_id)?;
+                        return Err(AppError::Config(format!(
+                            "Groq rewrite timed out after {} seconds.",
+                            API_REWRITE_TIMEOUT_SECONDS
+                        )));
+                    }
+                }
+            }
+        }
         "Alibaba" => {
             if alibaba_api_key.trim().is_empty() {
                 emit_missing_rewrite_key(
@@ -394,7 +444,7 @@ async fn run_inner(
                 }
             }
         }
-        "Local" if rewrite_model.starts_with("apple-fm") => {
+        "Apple" => {
             #[cfg(target_os = "macos")]
             {
                 match apple_fm::rewrite(&system_prompt, &user_message).await {
@@ -426,42 +476,20 @@ async fn run_inner(
                 (raw_text.clone(), "raw-transcription".to_string())
             }
         }
-        "Local" => match ensure_local_llm(app, state) {
-            Ok(engine) => {
-                let sys = system_prompt.clone();
-                let usr = user_message.clone();
-                match tokio::task::spawn_blocking(move || engine.rewrite(&sys, &usr)).await {
-                    Ok(Ok(text)) => {
-                        ensure_run_current(state, run_id)?;
-                        log::info!(
-                            "Local LLM rewrite completed in {:.2}s",
-                            rewrite_started_at.elapsed().as_secs_f64()
-                        );
-                        (text, "local-llm".to_string())
-                    }
-                    Ok(Err(error)) => {
-                        ensure_run_current(state, run_id)?;
-                        log::error!(
-                            "Local LLM rewrite failed, falling back to raw text: {}",
-                            error
-                        );
-                        let _ = app.emit("rewrite-error", error.to_string());
-                        (raw_text.clone(), "raw-transcription".to_string())
-                    }
-                    Err(join) => {
-                        ensure_run_current(state, run_id)?;
-                        return Err(AppError::Config(format!(
-                            "Local LLM task join failed: {}",
-                            join
-                        )));
-                    }
-                }
-            }
-            Err(error) => {
-                emit_missing_rewrite_key(app, &error.to_string());
-                (raw_text.clone(), "raw-transcription".to_string())
-            }
-        },
+        // Old "Local" llama.cpp rewrite path — Llama 3.2 1B and Gemma 3 1B were
+        // removed from the catalog. Stale settings get migrated by schema.rs,
+        // but the engine code is kept compiled so older builds can fall back
+        // gracefully if a user finds a way to set the provider manually.
+        "Local" => {
+            log::warn!(
+                "Local llama.cpp rewrite provider is deprecated; falling back to raw text"
+            );
+            let _ = app.emit(
+                "rewrite-error",
+                "The local llama.cpp rewrite models were removed. Switch to Apple, Groq, or Google.",
+            );
+            (raw_text.clone(), "raw-transcription".to_string())
+        }
         _ => (
             local_cleanup::rewrite(&raw_text, local_cleanup_options),
             "local-cleanup".to_string(),
@@ -472,6 +500,15 @@ async fn run_inner(
     // despite the prompt. Common with small instruct models (Gemma 1B,
     // Llama 1B) that mirror few-shot example formatting.
     let rewritten = strip_wrapping_quotes(&rewritten);
+    // Defensive: detect "no change" meta-commentary the model emitted instead
+    // of echoing the input. Treat it as empty so the deliver step deletes the
+    // placeholder and pastes nothing.
+    let rewritten = if is_no_change_sentinel(&rewritten) {
+        log::info!("Rewrite returned a no-change sentinel; treating as empty");
+        String::new()
+    } else {
+        rewritten
+    };
     let model_used = format!("{} + {}", speech_model_used, rewrite_model_used);
 
     // Step 4: Save to history
@@ -497,7 +534,18 @@ async fn run_inner(
 
     ensure_run_current(state, run_id)?;
     if auto_paste {
-        paste::simulate::insert_text(&rewritten)?;
+        // If the hotkey handler typed a "Listening..." placeholder, swap it
+        // for the rewrite in one step. Empty / whitespace-only rewrites get
+        // left alone here — the outer cleanup deletes the placeholder so
+        // the user isn't pasted with nothing.
+        if !rewritten.trim().is_empty() {
+            let placeholder_len = state.pending_placeholder.lock().unwrap().take();
+            if let Some(len) = placeholder_len {
+                paste::simulate::replace_placeholder(len, &rewritten)?;
+            } else {
+                paste::simulate::insert_text(&rewritten)?;
+            }
+        }
     } else {
         paste::simulate::copy_text(app, &rewritten)?;
     }
@@ -513,7 +561,14 @@ async fn run_inner(
         "E2E processing completed in {:.2}s",
         e2e_started_at.elapsed().as_secs_f64()
     );
-    log::info!("Pipeline complete: \"{}\" -> \"{}\"", raw_text, rewritten);
+    // Log lengths only — full transcript text can contain sensitive content
+    // (passwords, internal docs, etc.) that the user dictated by accident.
+    // Use the in-app History page if you need to inspect actual text.
+    log::info!(
+        "Pipeline complete: raw={} chars, rewritten={} chars",
+        raw_text.chars().count(),
+        rewritten.chars().count()
+    );
     Ok(())
 }
 
@@ -550,69 +605,12 @@ pub fn prewarm(app: AppHandle) {
         }
 
         // Apple FM's "model" is OS-resident — nothing to load on our end.
-        if rewrite_provider == "Local" && !rewrite_model.starts_with("apple-fm") {
-            let started = Instant::now();
-            match ensure_local_llm(&app, &state) {
-                Ok(_) => log::info!(
-                    "Pre-warmed local LLM `{}` in {:.2}s",
-                    rewrite_model,
-                    started.elapsed().as_secs_f64()
-                ),
-                Err(e) => log::info!("Local LLM pre-warm skipped: {}", e),
-            }
-        }
+        // Other rewrite providers are network-only and need no pre-warm. The
+        // legacy "Local" llama.cpp path is intentionally not pre-warmed; that
+        // catalog was removed and stale settings are migrated by schema.rs.
+        let _ = rewrite_provider;
+        let _ = rewrite_model;
     });
-}
-
-fn ensure_local_llm(app: &AppHandle, state: &AppState) -> AppResult<Arc<LocalLlmEngine>> {
-    // Resolve which LLM spec the user has selected via the rewrite_model
-    // setting. We accept a few legacy values that older builds may have
-    // written so existing installs don't break on upgrade.
-    let requested_id = {
-        let db = state.db.lock().unwrap();
-        let raw =
-            settings::get(&db, "rewrite_model").unwrap_or_else(|_| String::new());
-        match raw.as_str() {
-            // Legacy stub from the original single-model rollout.
-            "" | "local-llm" => LLAMA_3_2_1B_INSTRUCT_Q4KM.id.to_string(),
-            other => other.to_string(),
-        }
-    };
-
-    {
-        let guard = state.local_llm.lock().unwrap();
-        if let Some((cached_id, engine)) = guard.as_ref() {
-            if cached_id == &requested_id {
-                return Ok(Arc::clone(engine));
-            }
-        }
-    }
-
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Config(format!("App data dir error: {}", e)))?;
-    let spec = find_model(&requested_id).ok_or_else(|| {
-        AppError::Config(format!("Local LLM spec `{}` is not registered.", requested_id))
-    })?;
-    let model_path = direct_file_path(&app_data_dir, spec).ok_or_else(|| {
-        AppError::Config("Local LLM spec is not a direct-file artifact.".into())
-    })?;
-
-    let template = local_llm::template_for_spec(spec.id);
-    let load_started = Instant::now();
-    let engine = LocalLlmEngine::load(model_path, template)?;
-    log::info!(
-        "Loaded local LLM `{}` ({:?}) in {:.2}s",
-        spec.id,
-        template,
-        load_started.elapsed().as_secs_f64()
-    );
-    let engine = Arc::new(engine);
-
-    let mut guard = state.local_llm.lock().unwrap();
-    *guard = Some((requested_id, Arc::clone(&engine)));
-    Ok(engine)
 }
 
 fn ensure_parakeet_engine(
@@ -653,6 +651,34 @@ fn ensure_parakeet_engine(
 /// straight ASCII quotes plus the common curly/CJK pairs. Single-pair wraps
 /// are nearly always a model artifact; if the rewritten text starts and ends
 /// with the same quote character we drop them.
+/// Return true if `s` looks like a "the model had nothing to do" response
+/// rather than an actual cleaned transcript. Small instruct models sometimes
+/// emit these phrases despite the system prompt telling them not to. When
+/// detected, the pipeline treats the rewrite as empty — placeholder gets
+/// removed, nothing pasted.
+fn is_no_change_sentinel(s: &str) -> bool {
+    let normalized: String = s
+        .trim()
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase();
+    matches!(
+        normalized.as_str(),
+        ""
+            | "no change"
+            | "no changes"
+            | "no changes needed"
+            | "no change needed"
+            | "unchanged"
+            | "no rewrite"
+            | "no rewrite needed"
+            | "nothing to change"
+            | "nothing to clean"
+            | "n a"
+            | "na"
+            | "none"
+    )
+}
+
 fn strip_wrapping_quotes(s: &str) -> String {
     let trimmed = s.trim();
     let mut chars: Vec<char> = trimmed.chars().collect();

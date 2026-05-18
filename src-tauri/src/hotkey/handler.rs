@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
@@ -7,18 +7,20 @@ use crate::audio::capture::AudioCaptureHandle;
 use crate::audio::feedback;
 use crate::db::settings;
 use crate::error::AppResult;
+use crate::paste;
 use crate::processing_mode;
 use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING, STATE_RECORDING};
-use crate::transcribe::local::download::{parakeet_spec_for, LocalModelSpec};
-use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
-use crate::transcribe::local::streaming::{self, StreamingHandle};
 
 const MIN_RECORDING_DURATION_MS: u128 = 300;
+
+/// Text typed into the focused field when recording starts. The pipeline
+/// replaces it with the final rewrite, or deletes it if the rewrite fails /
+/// is empty.
+pub const RECORDING_PLACEHOLDER: &str = "Listening...";
 
 pub struct HotkeyState {
     pub press_time: Mutex<Option<Instant>>,
     pub audio_capture: AudioCaptureHandle,
-    pub streaming: Mutex<Option<StreamingHandle>>,
 }
 
 impl HotkeyState {
@@ -26,7 +28,6 @@ impl HotkeyState {
         Ok(Self {
             press_time: Mutex::new(None),
             audio_capture: AudioCaptureHandle::new()?,
-            streaming: Mutex::new(None),
         })
     }
 }
@@ -55,9 +56,6 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
     // Emit state change event
     let _ = tauri::Emitter::emit(app, "state-changed", "recording");
 
-    // Show overlay with "Listening..."
-    crate::overlay::show(app, "listening");
-
     // Play start sound when enabled
     if sound_enabled(app_state) {
         if let Err(e) = feedback::play_start() {
@@ -76,67 +74,60 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
         return;
     }
 
-    maybe_start_streaming(app, hotkey_state, app_state);
-}
-
-/// If the user picked Parakeet local + streaming is enabled, kick off the
-/// background task that emits `transcription-partial` events while recording.
-/// Best-effort: any failure here just means no partials.
-fn maybe_start_streaming(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppState) {
-    let (speech_model, streaming_enabled) = {
-        let db = app_state.db.lock().unwrap();
-        let model = settings::get(&db, "speech_model").unwrap_or_default();
-        let enabled = settings::get(&db, "parakeet_streaming")
-            .unwrap_or_else(|_| "true".into())
-            == "true";
-        (model, enabled)
-    };
-
-    let Some(parakeet_spec) = parakeet_spec_for(&speech_model) else {
-        return;
-    };
-    if !streaming_enabled {
-        return;
-    }
-
-    let engine = match resolve_or_load_parakeet(app, app_state, parakeet_spec) {
-        Ok(e) => e,
-        Err(e) => {
-            log::debug!("streaming engine not available: {}", e);
+    // Type the "Listening..." placeholder into the focused field if auto-paste
+    // is on. The pipeline replaces it with the final rewrite (or deletes it on
+    // failure). Best-effort: if accessibility isn't granted or the focused
+    // surface rejects input, we just skip the placeholder and let the pipeline
+    // paste at the end as before.
+    let auto_paste = auto_paste_enabled(app_state);
+    log::info!(
+        "Hotkey press: auto_paste={}, scheduling placeholder",
+        auto_paste
+    );
+    if auto_paste {
+        let is_toggle = {
+            let db = app_state.db.lock().unwrap();
+            settings::get(&db, "hotkey_mode")
+                .map(|v| v == "toggle")
+                .unwrap_or(false)
+        };
+        // Placeholder is toggle-mode only. In hold mode we just paste the
+        // final rewrite when the pipeline finishes — no "Listening..." chip.
+        // The OS hotkey grab blocks every userland injection strategy we
+        // tried during the hold period, so the placeholder UX added no
+        // value (it would only appear during the brief pipeline phase
+        // anyway, which doesn't read as recording feedback).
+        if !is_toggle {
             return;
         }
-    };
 
-    let handle = streaming::start(app.clone(), hotkey_state.audio_capture.clone(), engine);
-    let mut guard = hotkey_state.streaming.lock().unwrap();
-    if let Some(existing) = guard.replace(handle) {
-        existing.stop();
-    }
-}
-
-fn resolve_or_load_parakeet(
-    app: &AppHandle,
-    app_state: &AppState,
-    spec: &LocalModelSpec,
-) -> AppResult<Arc<ParakeetEngine>> {
-    {
-        let guard = app_state.parakeet_engine.lock().unwrap();
-        if let Some((cached_id, e)) = guard.as_ref() {
-            if cached_id == spec.id {
-                return Ok(Arc::clone(e));
+        let app_for_placeholder = app.clone();
+        tauri::async_runtime::spawn(async move {
+            // Wait for the tap key to fully release before we synthesize
+            // keystrokes — otherwise the OS hotkey grab swallows them.
+            // 100ms tested as not enough; 200ms is the empirical minimum
+            // that works reliably across human tap durations.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let state = app_for_placeholder.state::<AppState>();
+            if !state.is_recording() {
+                return;
             }
-        }
+            match paste::simulate::insert_text(RECORDING_PLACEHOLDER) {
+                Ok(()) => {
+                    let len = RECORDING_PLACEHOLDER.chars().count();
+                    *state.pending_placeholder.lock().unwrap() = Some(len);
+                    log::info!("Inserted placeholder ({} chars)", len);
+                }
+                Err(e) => {
+                    log::warn!("Could not insert recording placeholder: {}", e);
+                }
+            }
+        });
+    } else {
+        log::info!("auto_paste disabled, skipping placeholder");
     }
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| crate::error::AppError::Config(format!("App data dir: {}", e)))?;
-    let dir = crate::transcribe::local::download::model_dir(&app_data_dir, spec);
-    let engine = Arc::new(ParakeetEngine::load(&ParakeetModelPaths::new(dir))?);
-    let mut guard = app_state.parakeet_engine.lock().unwrap();
-    *guard = Some((spec.id.to_string(), Arc::clone(&engine)));
-    Ok(engine)
 }
+
 
 pub fn on_released(
     app: &AppHandle,
@@ -146,12 +137,6 @@ pub fn on_released(
     // Only process if we're recording
     if !app_state.is_recording() {
         return None;
-    }
-
-    // Signal the streaming task (if any) to stop so it doesn't keep firing
-    // partial events after the final transcription lands.
-    if let Some(handle) = hotkey_state.streaming.lock().unwrap().take() {
-        handle.stop();
     }
 
     // Check duration - ignore very short presses
@@ -164,7 +149,7 @@ pub fn on_released(
         if dur < MIN_RECORDING_DURATION_MS {
             log::info!("Press too short ({}ms), ignoring", dur);
             app_state.set_state(STATE_IDLE);
-            crate::overlay::hide(app);
+            cleanup_placeholder(app_state);
             // Still need to stop the stream
             let _ = hotkey_state.audio_capture.stop();
             return None;
@@ -178,7 +163,7 @@ pub fn on_released(
                 max_duration_ms
             );
             app_state.set_state(STATE_IDLE);
-            crate::overlay::hide(app);
+            cleanup_placeholder(app_state);
             let _ = hotkey_state.audio_capture.stop();
             let _ = tauri::Emitter::emit(
                 app,
@@ -208,7 +193,7 @@ pub fn on_released(
             if audio_data.is_empty() {
                 log::warn!("No audio data captured");
                 app_state.set_state(STATE_IDLE);
-                crate::overlay::hide(app);
+                cleanup_placeholder(app_state);
                 if sound_enabled(app_state) {
                     let _ = feedback::play_error();
                 }
@@ -217,14 +202,13 @@ pub fn on_released(
                 log::info!("Captured {} audio samples", audio_data.len());
                 app_state.set_state(STATE_PROCESSING);
                 let _ = tauri::Emitter::emit(app, "state-changed", "processing");
-                crate::overlay::show(app, "rewriting");
                 Some(audio_data)
             }
         }
         Err(e) => {
             log::error!("Failed to stop recording: {}", e);
             app_state.set_state(STATE_IDLE);
-            crate::overlay::hide(app);
+            cleanup_placeholder(app_state);
             if sound_enabled(app_state) {
                 let _ = feedback::play_error();
             }
@@ -238,6 +222,25 @@ fn sound_enabled(app_state: &AppState) -> bool {
     settings::get(&db, "sound_enabled")
         .map(|v| v == "true")
         .unwrap_or(true)
+}
+
+fn auto_paste_enabled(app_state: &AppState) -> bool {
+    let db = app_state.db.lock().unwrap();
+    settings::get(&db, "auto_paste")
+        .ok()
+        .or_else(|| settings::get(&db, "auto_copy").ok())
+        .map(|v| v == "true")
+        .unwrap_or(true)
+}
+
+/// Remove any leftover "Listening..." placeholder when we bail before
+/// reaching the pipeline (short press, max duration, capture error).
+fn cleanup_placeholder(app_state: &AppState) {
+    if let Some(len) = app_state.pending_placeholder.lock().unwrap().take() {
+        if let Err(e) = paste::simulate::delete_placeholder(len) {
+            log::warn!("Could not delete recording placeholder: {}", e);
+        }
+    }
 }
 
 fn max_recording_duration_ms(app_state: &AppState) -> u128 {

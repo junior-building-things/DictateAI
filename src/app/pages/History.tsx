@@ -1,44 +1,36 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Calendar,
-  Check,
-  Clock,
-  Pencil,
-  Search,
-  Star,
-  Trash2,
-  X,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Globe, Pencil, Search, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
-import { useAppStore } from "../../lib/store";
-import { cn } from "../../lib/utils";
+import { useAppStore, type HistoryItem } from "../../lib/store";
 
 export const History = () => {
   const { t } = useI18n();
   const { history, toggleFavorite, deleteHistoryItem, updateHistoryRewritten } = useAppStore();
   const [search, setSearch] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  const filteredItems = history.filter((item) => {
-    const query = search.trim().toLowerCase();
-    const matchesSearch =
-      query.length === 0 ||
-      item.original.toLowerCase().includes(query) ||
-      item.rewritten.toLowerCase().includes(query);
-    const matchesFilter = showFavoritesOnly ? item.favorited : true;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredItems = useMemo(() => {
+    return history.filter((item) => {
+      const query = search.trim().toLowerCase();
+      const matchesSearch =
+        query.length === 0 ||
+        item.original.toLowerCase().includes(query) ||
+        item.rewritten.toLowerCase().includes(query);
+      const matchesFilter = showFavoritesOnly ? item.favorited : true;
+      return matchesSearch && matchesFilter;
+    });
+  }, [history, search, showFavoritesOnly]);
+
+  // Group by date string for sticky-header table groups.
+  const grouped = useMemo(() => groupByDate(filteredItems), [filteredItems]);
 
   useEffect(() => {
-    if (isSearchOpen) {
-      searchInputRef.current?.focus();
-    }
-  }, [isSearchOpen]);
+    if (search) searchInputRef.current?.focus();
+  }, [search]);
 
   const startEditing = (id: number, currentValue: string) => {
     setEditingId(id);
@@ -60,194 +52,213 @@ export const History = () => {
   };
 
   return (
-    <div className="space-y-8">
-      <header className="flex items-end justify-between">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-white">{t("navHistory")}</h1>
-          <p className="text-neutral-400">{t("historySubtitle")}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-lg border transition-all",
-              showFavoritesOnly
-                ? "border-amber-500/30 bg-amber-500/10 text-amber-500"
-                : "border-white/[0.06] bg-[#161616] text-neutral-400 hover:bg-[#1b1b1b] hover:text-white",
-            )}
-          >
-            <Star className={cn("h-4 w-4", showFavoritesOnly && "fill-current")} />
-          </button>
-          {isSearchOpen ? (
-            <div className="flex h-10 items-center gap-2 rounded-lg border border-white/[0.06] bg-[#161616] px-3 text-neutral-400 transition-all">
-              <Search className="h-4 w-4 shrink-0" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                onBlur={() => {
-                  if (search.trim().length === 0) {
-                    setIsSearchOpen(false);
-                  }
-                }}
-                placeholder={t("searchHistoryPlaceholder")}
-                className="w-44 bg-transparent text-sm text-white placeholder:text-neutral-600 focus:outline-none"
-              />
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setIsSearchOpen(false);
-                }}
-                className="text-neutral-500 transition-colors hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
+    <>
+      {/* Flush toolbar: search + favorites filter */}
+      <div className="tab-toolbar">
+        <div
+          className="flex h-8 items-center gap-2 rounded-md border px-3"
+          style={{
+            background: "var(--bg-elev-2)",
+            borderColor: "var(--hairline)",
+            color: "var(--text-muted)",
+            width: 280,
+          }}
+        >
+          <Search size={13} strokeWidth={2} />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("searchHistoryPlaceholder")}
+            className="w-full bg-transparent text-[12px] outline-none"
+            style={{ color: "var(--text)" }}
+          />
+          {search && (
             <button
-              onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.06] bg-[#161616] text-neutral-400 transition-all hover:bg-[#1b1b1b] hover:text-white"
+              type="button"
+              onClick={() => setSearch("")}
+              style={{ color: "var(--text-dim)" }}
             >
-              <Search className="h-4 w-4" />
+              <X size={12} strokeWidth={2} />
             </button>
           )}
         </div>
-      </header>
-
-      <div className="space-y-8">
-        {filteredItems.map((item) => {
-          const isEditing = editingId === item.id;
-
-          return (
-            <div
-              key={item.id}
-              className="group rounded-2xl border border-white/[0.06] bg-[#121212] p-6 transition-all duration-300 hover:border-white/[0.1] hover:bg-[#171717] hover:shadow-xl hover:shadow-black/20"
-            >
-                <div className="mb-4 flex items-start justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5 rounded-md bg-white/[0.05] px-2 py-1">
-                      <Calendar className="h-3 w-3 text-neutral-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-                        {item.date}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 rounded-md bg-white/[0.05] px-2 py-1">
-                      <Clock className="h-3 w-3 text-neutral-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-                        {item.time}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={() => {
-                        toggleFavorite(item.id);
-                        toast.info(
-                          item.favorited
-                            ? t("dictationRemovedFromFavorites")
-                            : t("dictationAddedToFavorites"),
-                        );
-                      }}
-                      className={cn(
-                        "rounded-lg p-2 transition-all",
-                        item.favorited
-                          ? "bg-amber-500/10 text-amber-500"
-                          : "text-neutral-500 hover:bg-white/[0.05] hover:text-white",
-                      )}
-                    >
-                      <Star className={cn("h-4 w-4", item.favorited && "fill-current")} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        void deleteHistoryItem(item.id);
-                        toast.info(t("deletedFromHistory"));
-                      }}
-                      className="rounded-lg p-2 text-neutral-500 transition-all hover:bg-red-500/10 hover:text-red-500"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                      {t("spokenLabel")}
-                    </p>
-                    <p className="text-sm font-medium italic leading-relaxed text-neutral-400">
-                      &quot;{item.original}&quot;
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold uppercase tracking-wider text-blue-500">
-                      {t("rewrittenLabel")}
-                    </p>
-                    {isEditing ? (
-                      <textarea
-                        value={editValue}
-                        onChange={(event) => setEditValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault();
-                            saveEdit();
-                          }
-                          if (event.key === "Escape") {
-                            cancelEdit();
-                          }
-                        }}
-                        autoFocus
-                        className="w-full resize-none rounded-xl border border-blue-500/30 bg-white/[0.03] p-3 text-base font-medium leading-relaxed text-white transition-all focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-                        rows={2}
-                      />
-                    ) : (
-                      <p className="text-base font-medium leading-relaxed text-white">
-                        {item.rewritten}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/[0.04] pt-4">
-                  {isEditing ? (
-                    <>
-                      <button
-                        onClick={cancelEdit}
-                        className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-neutral-400 transition-colors hover:bg-white/[0.05] hover:text-white"
-                      >
-                        <X className="h-4 w-4" />
-                        {t("cancel")}
-                      </button>
-                      <button
-                        onClick={saveEdit}
-                        className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500"
-                      >
-                        <Check className="h-4 w-4" />
-                        {t("save")}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => startEditing(item.id, item.rewritten)}
-                        className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        {t("edit")}
-                      </button>
-                    </>
-                  )}
-                </div>
-            </div>
-          );
-        })}
-
-        {filteredItems.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-neutral-500">{t("noHistoryItemsFound")}</p>
-          </div>
-        ) : null}
+        <button
+          type="button"
+          onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11.5px]"
+          style={{
+            background: showFavoritesOnly ? "var(--bg-elev-3)" : "var(--bg-elev-2)",
+            borderColor: showFavoritesOnly ? "var(--hairline-strong)" : "var(--hairline)",
+            color: showFavoritesOnly ? "var(--amber)" : "var(--text-muted)",
+          }}
+        >
+          <Star
+            size={12}
+            strokeWidth={2}
+            fill={showFavoritesOnly ? "currentColor" : "none"}
+          />
+          Favorites
+        </button>
+        <div style={{ flex: 1 }} />
+        <span className="mono-label" style={{ fontSize: "10.5px" }}>
+          {filteredItems.length} {filteredItems.length === 1 ? "entry" : "entries"}
+        </span>
       </div>
-    </div>
+
+      <div className="page-body">
+      {filteredItems.length === 0 ? (
+        <div className="empty">
+          <p>{t("noHistoryItemsFound")}</p>
+        </div>
+      ) : (
+        <>
+          {/* Table header */}
+          <div className="thead t-history">
+            <div>Time</div>
+            <div>Spoken</div>
+            <div>Rewritten</div>
+            <div style={{ textAlign: "right" }}>Words</div>
+            <div style={{ textAlign: "right" }}>Actions</div>
+          </div>
+
+          {/* Date-grouped rows */}
+          {grouped.map(({ date, items }) => (
+            <div key={date}>
+              <div className="tgroup-header">
+                <span className="tgroup-pill">
+                  <Globe size={10} strokeWidth={2} />
+                  {date}
+                </span>
+                <span className="tgroup-count">{items.length}</span>
+                <span className="tgroup-bar" />
+              </div>
+              {items.map((item) => {
+                const isEditing = editingId === item.id;
+                return (
+                  <div key={item.id} className="trow t-history">
+                    <div className="cell-time">{item.time}</div>
+                    <div className="cell-spoken">{item.original}</div>
+                    <div className="cell-rewritten">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editValue}
+                          autoFocus
+                          onChange={(event) => setEditValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              saveEdit();
+                            }
+                            if (event.key === "Escape") {
+                              cancelEdit();
+                            }
+                          }}
+                          className="w-full rounded px-2 py-1 text-[13px] outline-none"
+                          style={{
+                            background: "var(--bg-elev-3)",
+                            border: "1px solid oklch(0.65 0.17 var(--ai-h) / 0.4)",
+                            color: "var(--text)",
+                          }}
+                        />
+                      ) : (
+                        item.rewritten
+                      )}
+                    </div>
+                    <div className="cell-words" style={{ textAlign: "right" }}>
+                      {wordCount(item.rewritten || item.original)}w
+                    </div>
+                    <div className="cell-actions">
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            className="grid size-[26px] place-items-center rounded-md"
+                            style={{ color: "var(--ai)" }}
+                            onClick={saveEdit}
+                            title="Save"
+                          >
+                            <Check size={13} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            className="grid size-[26px] place-items-center rounded-md"
+                            style={{ color: "var(--text-dim)" }}
+                            onClick={cancelEdit}
+                            title="Cancel"
+                          >
+                            <X size={13} strokeWidth={2} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={`grid size-[26px] place-items-center rounded-md fav-btn ${item.favorited ? "on" : ""}`}
+                            onClick={() => {
+                              toggleFavorite(item.id);
+                              toast.info(
+                                item.favorited
+                                  ? t("dictationRemovedFromFavorites")
+                                  : t("dictationAddedToFavorites"),
+                              );
+                            }}
+                            title={item.favorited ? "Unstar" : "Star"}
+                          >
+                            <Star
+                              size={13}
+                              strokeWidth={2}
+                              fill={item.favorited ? "currentColor" : "none"}
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            className="grid size-[26px] place-items-center rounded-md"
+                            style={{ color: "var(--text-dim)" }}
+                            onClick={() => startEditing(item.id, item.rewritten)}
+                            title="Edit"
+                          >
+                            <Pencil size={13} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            className="grid size-[26px] place-items-center rounded-md"
+                            style={{ color: "var(--text-dim)" }}
+                            onClick={() => {
+                              void deleteHistoryItem(item.id);
+                              toast.info(t("deletedFromHistory"));
+                            }}
+                            title="Delete"
+                          >
+                            <Trash2 size={13} strokeWidth={2} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </>
+      )}
+      </div>
+    </>
   );
 };
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function groupByDate(items: HistoryItem[]) {
+  const groups = new Map<string, HistoryItem[]>();
+  for (const item of items) {
+    const key = item.date || "Earlier";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(item);
+  }
+  return Array.from(groups.entries()).map(([date, items]) => ({ date, items }));
+}

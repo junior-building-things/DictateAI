@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -7,10 +8,11 @@ use tokio::time::timeout;
 
 use crate::error::{AppError, AppResult};
 
-/// Path to the Swift helper binary, baked in at build time by `build.rs`.
-/// `None` here means we couldn't compile the helper (no swiftc, no macOS 26
-/// SDK, or compilation failed) — callers surface a clear error.
-const HELPER_PATH: Option<&str> = option_env!("APPLE_FM_HELPER_PATH");
+/// Compile-time path to the Swift helper binary, written by `build.rs`.
+/// Only useful in dev (`tauri dev`) — production .app bundles ship the
+/// helper inside `Contents/Resources/binaries/` and resolve via
+/// `current_exe()` below.
+const HELPER_PATH_BUILD: Option<&str> = option_env!("APPLE_FM_HELPER_PATH");
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 const REWRITE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -28,21 +30,48 @@ struct Input<'a> {
     user: &'a str,
 }
 
-fn helper_path() -> AppResult<&'static str> {
-    HELPER_PATH.ok_or_else(|| {
+/// Resolve the helper binary's location at runtime. Tries, in order:
+///   1. `APPLE_FM_HELPER_PATH` env var (set by `build.rs` — works in dev).
+///   2. `Contents/Resources/binaries/apple-fm-helper` next to the running
+///      executable (the bundled location in a distributed .app).
+fn resolve_helper_path() -> Option<PathBuf> {
+    if let Some(p) = HELPER_PATH_BUILD {
+        let path = PathBuf::from(p);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        // exe = .../DictateAI.app/Contents/MacOS/dictateai
+        // → .../DictateAI.app/Contents/Resources/binaries/apple-fm-helper
+        let bundled = exe
+            .parent()
+            .and_then(Path::parent)
+            .map(|c| c.join("Resources").join("binaries").join("apple-fm-helper"));
+        if let Some(p) = bundled {
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn helper_path() -> AppResult<PathBuf> {
+    resolve_helper_path().ok_or_else(|| {
         AppError::Config(
-            "Apple Foundation Models helper wasn't built. Requires macOS 26+ with swiftc \
-             available at compile time."
+            "Apple Foundation Models helper wasn't found. The bundled binary is missing \
+             — reinstall the app, or rebuild from source with swiftc + the macOS 26 SDK."
                 .into(),
         )
     })
 }
 
 pub async fn check_availability() -> Availability {
-    let Some(path) = HELPER_PATH else {
+    let Some(path) = resolve_helper_path() else {
         return Availability::NotBuilt;
     };
-    let spawn = Command::new(path).arg("--check").output();
+    let spawn = Command::new(&path).arg("--check").output();
     match timeout(CHECK_TIMEOUT, spawn).await {
         Ok(Ok(out)) if out.status.success() => Availability::Available,
         _ => Availability::Unavailable,
@@ -53,7 +82,7 @@ pub async fn rewrite(system: &str, user: &str) -> AppResult<String> {
     let path = helper_path()?;
     let input_json = serde_json::to_vec(&Input { system, user })?;
 
-    let mut child = Command::new(path)
+    let mut child = Command::new(&path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

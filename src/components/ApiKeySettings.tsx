@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getSetting, saveSetting, validateGeminiApiKey, validateOpenAiApiKey } from "../lib/commands";
+import { getSetting, saveSetting, validateGeminiApiKey, validateGroqApiKey, validateOpenAiApiKey } from "../lib/commands";
 import { useI18n } from "../lib/i18n";
 
 export default function ApiKeySettings() {
@@ -7,6 +7,7 @@ export default function ApiKeySettings() {
   const copy = getApiKeyCopy(language);
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [groqApiKey, setGroqApiKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [isValidatingGemini, setIsValidatingGemini] = useState(false);
   const [geminiStatus, setGeminiStatus] = useState<"idle" | "success" | "error">("idle");
@@ -14,15 +15,20 @@ export default function ApiKeySettings() {
   const [isValidatingOpenAi, setIsValidatingOpenAi] = useState(false);
   const [openAiStatus, setOpenAiStatus] = useState<"idle" | "success" | "error">("idle");
   const [openAiMessage, setOpenAiMessage] = useState("");
+  const [isValidatingGroq, setIsValidatingGroq] = useState(false);
+  const [groqStatus, setGroqStatus] = useState<"idle" | "success" | "error">("idle");
+  const [groqMessage, setGroqMessage] = useState("");
 
   useEffect(() => {
     Promise.all([
       getSetting("gemini_api_key").catch(() => ""),
       getSetting("speech_openai_api_key").catch(() => ""),
+      getSetting("groq_api_key").catch(() => ""),
     ])
-      .then(([geminiKey, openaiKey]) => {
+      .then(([geminiKey, openaiKey, groqKey]) => {
         setGeminiApiKey(geminiKey);
         setOpenaiApiKey(openaiKey);
+        setGroqApiKey(groqKey);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -43,6 +49,25 @@ export default function ApiKeySettings() {
       setGeminiMessage(t("apiKeyInvalid"));
     } finally {
       setIsValidatingGemini(false);
+    }
+  };
+
+  const handleSaveGroq = async () => {
+    setIsValidatingGroq(true);
+    setGroqStatus("idle");
+    setGroqMessage("");
+
+    try {
+      await validateGroqApiKey(groqApiKey);
+      await saveSetting("groq_api_key", groqApiKey.trim());
+      setGroqStatus("success");
+      setGroqMessage(t("apiKeyValid"));
+    } catch (error) {
+      setGroqStatus("error");
+      void error;
+      setGroqMessage(t("apiKeyInvalid"));
+    } finally {
+      setIsValidatingGroq(false);
     }
   };
 
@@ -133,6 +158,38 @@ export default function ApiKeySettings() {
 
       {!isValidatingGemini && geminiStatus === "error" && (
         <p className="text-xs text-red-300">{geminiMessage}</p>
+      )}
+
+      <label className="field-label block">Groq API Key</label>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={groqApiKey}
+          onChange={(e) => {
+            setGroqApiKey(e.target.value);
+            setGroqStatus("idle");
+            setGroqMessage("");
+          }}
+          placeholder="gsk_..."
+          className="input-control flex-1"
+        />
+        <button
+          onClick={() => void handleSaveGroq()}
+          disabled={isValidatingGroq || !groqApiKey.trim()}
+          className="btn-primary disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isValidatingGroq ? t("validating") : t("validateAndSave")}
+        </button>
+      </div>
+
+      {isValidatingGroq && (
+        <p className="text-xs text-neutral-400">Testing Groq API Key...</p>
+      )}
+      {!isValidatingGroq && groqStatus === "success" && (
+        <p className="text-xs text-emerald-300">{groqMessage}</p>
+      )}
+      {!isValidatingGroq && groqStatus === "error" && (
+        <p className="text-xs text-red-300">{groqMessage}</p>
       )}
     </section>
   );

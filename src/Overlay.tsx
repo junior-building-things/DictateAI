@@ -9,7 +9,6 @@ type AppStatus = "idle" | "recording" | "processing";
 export default function Overlay() {
   const [state, setState] = useState<OverlayState>("listening");
   const [appLanguage, setAppLanguage] = useState("en");
-  const [partial, setPartial] = useState<string>("");
 
   useEffect(() => {
     const unlistenState = listen<string>("overlay-state", (event) => {
@@ -19,16 +18,11 @@ export default function Overlay() {
       const appState = event.payload as AppStatus;
       if (appState === "recording") {
         setState("listening");
-        setPartial("");
       } else if (appState === "processing") {
         setState("processing");
       } else {
         setState("listening");
-        setPartial("");
       }
-    });
-    const unlistenPartial = listen<string>("transcription-partial", (event) => {
-      setPartial(event.payload ?? "");
     });
 
     let cancelled = false;
@@ -63,21 +57,17 @@ export default function Overlay() {
       window.clearInterval(interval);
       unlistenState.then((fn) => fn());
       unlistenAppState.then((fn) => fn());
-      unlistenPartial.then((fn) => fn());
     };
   }, []);
 
   const isListening = state === "listening";
   const listeningText = getOverlayText(appLanguage, "listening");
   const processingText = getOverlayText(appLanguage, "processing");
-  const showPartial = isListening && partial.length > 0;
-  const partialDisplay =
-    partial.length > 80 ? "..." + partial.slice(partial.length - 80) : partial;
 
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent select-none">
-      <div className="pointer-events-none flex max-w-[640px] items-center gap-3 rounded-full bg-[#050505]/95 px-5 py-3">
-        <div>
+      <div className="pointer-events-none flex items-center gap-2 rounded-full bg-[#050505]/95 px-4 py-2">
+        <div className="shrink-0">
           {isListening ? (
             <AudioLines className="overlay-audio-lines h-4 w-4 text-blue-500" />
           ) : (
@@ -85,28 +75,20 @@ export default function Overlay() {
           )}
         </div>
         <div className="min-w-0 grid">
-          {showPartial ? (
-            <span className="col-start-1 row-start-1 truncate text-sm font-medium text-white">
-              {partialDisplay}
-            </span>
-          ) : (
-            <>
-              <span
-                className={`col-start-1 row-start-1 text-sm font-medium text-white ${
-                  isListening ? "visible" : "invisible"
-                }`}
-              >
-                {listeningText}
-              </span>
-              <span
-                className={`col-start-1 row-start-1 text-sm font-medium text-white ${
-                  isListening ? "invisible" : "visible"
-                }`}
-              >
-                {processingText}
-              </span>
-            </>
-          )}
+          <span
+            className={`col-start-1 row-start-1 text-sm font-medium text-white ${
+              isListening ? "visible" : "invisible"
+            }`}
+          >
+            {listeningText}
+          </span>
+          <span
+            className={`col-start-1 row-start-1 text-sm font-medium text-white ${
+              isListening ? "invisible" : "visible"
+            }`}
+          >
+            {processingText}
+          </span>
         </div>
       </div>
     </div>

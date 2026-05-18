@@ -1,12 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import {
-  AudioLines,
-  Check,
-  ChevronDown,
-  PenLine,
-} from "lucide-react";
+import { Apple, AudioLines, FileArchive, KeyRound, Loader2, PenLine, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { Dropdown, ProviderLogo } from "../../components/Dropdown";
 import {
   appleFmAvailability,
   type AppleFmAvailability,
@@ -16,21 +11,14 @@ import {
   validateDeepgramApiKey,
   validateGeminiApiKey,
   validateGoogleSpeechConfig,
+  validateGroqApiKey,
   validateOpenAiApiKey,
 } from "../../lib/commands";
 import {
-  APPLE_FM_REWRITE_ID,
   defaultRewriteModel,
   defaultSpeechModel,
-  GEMMA_LOCAL_MODEL_ID,
-  getRewriteModelOption,
   getRewriteModelOptions,
-  getSpeechModelOption,
   getSpeechModelOptions,
-  LLAMA_LOCAL_MODEL_ID,
-  type ModelMetrics,
-  PARAKEET_V2_LOCAL_MODEL_ID,
-  PARAKEET_V3_LOCAL_MODEL_ID,
   rewriteProviderOptions,
   speechProviderOptions,
   type RewriteProvider,
@@ -39,7 +27,6 @@ import {
 import LocalModelCard from "../../components/LocalModelCard";
 import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
-import { cn } from "../../lib/utils";
 
 const ALIBABA_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 const SETTINGS_CHANGED_EVENT = "dictateai-settings-changed";
@@ -48,6 +35,16 @@ function emitSettingsChanged() {
   window.dispatchEvent(new Event(SETTINGS_CHANGED_EVENT));
 }
 
+/**
+ * Settings → Models. Matches the design file's `models:` panel:
+ *   Group "Speech":  model dropdown row + per-provider key row.
+ *   Group "Rewrite": model dropdown row + per-provider key row.
+ *
+ * Model dropdowns show a colored provider logo on the left and
+ * "Provider — model" as the label. Key rows render either an
+ * API-key input + Save button, or a local-model card (for NVIDIA
+ * Parakeet, or Apple FM on the rewrite side).
+ */
 export const Models = () => {
   const { t } = useI18n();
   const { models, setModels } = useAppStore();
@@ -58,124 +55,93 @@ export const Models = () => {
   const [geminiKey, setGeminiKey] = useState("");
   const [alibabaKey, setAlibabaKey] = useState("");
   const [openAiKey, setOpenAiKey] = useState("");
+  const [groqKey, setGroqKey] = useState("");
   const [action, setAction] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-
     const load = async () => {
-      try {
-        const [
-          nextDeepgramKey,
-          nextGoogleSpeechKey,
-          nextGoogleProjectId,
-          nextGoogleRegion,
-          nextGeminiKey,
-          nextAlibabaKey,
-          nextOpenAiKey,
-        ] = await Promise.all([
-          getSetting("speech_deepgram_api_key").catch(() => ""),
-          getSetting("speech_google_api_key").catch(() => ""),
-          getSetting("speech_google_project_id").catch(() => ""),
-          getSetting("speech_google_region").catch(() => "us"),
-          getSetting("gemini_api_key").catch(() => ""),
-          getSetting("alibaba_api_key").catch(() => ""),
-          getSetting("speech_openai_api_key").catch(() => ""),
-        ]);
-
-        if (!active) {
-          return;
-        }
-
-        setDeepgramKey(nextDeepgramKey);
-        setGoogleSpeechKey(nextGoogleSpeechKey);
-        setGoogleProjectId(nextGoogleProjectId);
-        setGoogleRegion(nextGoogleRegion || "us");
-        setGeminiKey(nextGeminiKey);
-        setAlibabaKey(nextAlibabaKey);
-        setOpenAiKey(nextOpenAiKey);
-      } finally {
-        // nothing to clean up
-      }
+      const [d, gs, gp, gr, g, a, o, q] = await Promise.all([
+        getSetting("speech_deepgram_api_key").catch(() => ""),
+        getSetting("speech_google_api_key").catch(() => ""),
+        getSetting("speech_google_project_id").catch(() => ""),
+        getSetting("speech_google_region").catch(() => "us"),
+        getSetting("gemini_api_key").catch(() => ""),
+        getSetting("alibaba_api_key").catch(() => ""),
+        getSetting("speech_openai_api_key").catch(() => ""),
+        getSetting("groq_api_key").catch(() => ""),
+      ]);
+      if (!active) return;
+      setDeepgramKey(d);
+      setGoogleSpeechKey(gs);
+      setGoogleProjectId(gp);
+      setGoogleRegion(gr || "us");
+      setGeminiKey(g);
+      setAlibabaKey(a);
+      setOpenAiKey(o);
+      setGroqKey(q);
     };
-
     void load();
     return () => {
       active = false;
     };
   }, []);
 
-  const speechOptions = getSpeechModelOptions(models.speechProvider);
-  const rewriteOptions = getRewriteModelOptions(models.rewriteProvider);
-  const selectedSpeechModel = getSpeechModelOption(models.speechProvider, models.speechModel);
-  const selectedRewriteModel = getRewriteModelOption(models.rewriteProvider, models.rewriteModel);
+  // ---- Speech-model dropdown: flatten all providers' options into one list.
+  type SpeechOpt = { value: string; provider: SpeechProvider; model: string };
+  const speechFlat: SpeechOpt[] = speechProviderOptions.flatMap((provider) =>
+    getSpeechModelOptions(provider).map((option) => ({
+      value: `${provider}::${option.setting}`,
+      provider,
+      model: option.label,
+    })),
+  );
+  const speechValue = `${models.speechProvider}::${models.speechModel}`;
+  const speechSelected =
+    speechFlat.find((option) => option.value === speechValue) ?? speechFlat[0];
 
-  const hasConfiguredSpeechCredentials = (provider: SpeechProvider) => {
-    switch (provider) {
-      case "Deepgram":
-        return Boolean(deepgramKey.trim());
-      case "Google":
-        return Boolean(googleSpeechKey.trim() && googleProjectId.trim());
-      case "OpenAI":
-        return Boolean(openAiKey.trim());
-      case "Alibaba":
-        return Boolean(alibabaKey.trim());
-      case "Local":
-        // The pipeline surfaces a clear error if the model isn't installed;
-        // no extra credentials are needed for local engines.
-        return true;
-    }
-  };
-
-  const hasConfiguredRewriteCredentials = (provider: RewriteProvider) => {
-    switch (provider) {
-      case "OpenAI":
-        return Boolean(openAiKey.trim());
-      case "Google":
-        return Boolean(geminiKey.trim());
-      case "Alibaba":
-        return Boolean(alibabaKey.trim());
-      case "Local":
-        return true;
-    }
-  };
-
-  const updateSpeechSelection = async ({
-    provider = models.speechProvider,
-    model = models.speechModel,
-  }: {
-    provider?: SpeechProvider;
-    model?: string;
-  }) => {
+  const selectSpeechModel = async (compositeValue: string) => {
+    const [provider, ...rest] = compositeValue.split("::");
+    const setting = rest.join("::");
+    const option = getSpeechModelOptions(provider as SpeechProvider).find(
+      (entry) => entry.setting === setting,
+    );
+    if (!option) return;
     await setModels({
-      speechProvider: provider,
-      speechModel: model,
+      speechProvider: provider as SpeechProvider,
+      speechModel: option.label,
     });
-
-    if (hasConfiguredSpeechCredentials(provider)) {
-      toast.info(t("speechModelUpdatedToast", { model }));
-    }
   };
 
-  const updateRewriteSelection = async ({
-    provider = models.rewriteProvider,
-    model = models.rewriteModel,
-  }: {
-    provider?: RewriteProvider;
-    model?: string;
-  }) => {
+  // ---- Rewrite-model dropdown
+  type RewriteOpt = { value: string; provider: RewriteProvider; model: string };
+  const rewriteFlat: RewriteOpt[] = rewriteProviderOptions.flatMap((provider) =>
+    getRewriteModelOptions(provider).map((option) => ({
+      value: `${provider}::${option.setting}`,
+      provider,
+      model: option.label,
+    })),
+  );
+  const rewriteValue = `${models.rewriteProvider}::${models.rewriteModel}`;
+  const rewriteSelected =
+    rewriteFlat.find((option) => option.value === rewriteValue) ?? rewriteFlat[0];
+
+  const selectRewriteModel = async (compositeValue: string) => {
+    const [provider, ...rest] = compositeValue.split("::");
+    const setting = rest.join("::");
+    const option = getRewriteModelOptions(provider as RewriteProvider).find(
+      (entry) => entry.setting === setting,
+    );
+    if (!option) return;
     await setModels({
-      rewriteProvider: provider,
-      rewriteModel: model,
+      rewriteProvider: provider as RewriteProvider,
+      rewriteModel: option.label,
     });
-
-    if (hasConfiguredRewriteCredentials(provider)) {
-      toast.info(t("rewriteModelUpdatedToast", { model }));
-    }
   };
 
-  const runAction = async (actionKey: string, work: () => Promise<void>) => {
-    setAction(actionKey);
+  // ---- Validation handlers ---------------------------------------------
+  const runAction = async (key: string, work: () => Promise<void>) => {
+    setAction(key);
     try {
       await work();
     } catch (error) {
@@ -184,637 +150,392 @@ export const Models = () => {
       setAction(null);
     }
   };
-
   const saveDeepgram = () =>
     runAction("save-deepgram", async () => {
-      const apiKey = deepgramKey.trim();
-      if (!apiKey) {
-        throw new Error(t("enterDeepgramApiKeyFirst"));
-      }
-
-      await validateDeepgramApiKey(apiKey);
-      await saveSetting("speech_deepgram_api_key", apiKey);
+      const k = deepgramKey.trim();
+      if (!k) throw new Error(t("enterDeepgramApiKeyFirst"));
+      await validateDeepgramApiKey(k);
+      await saveSetting("speech_deepgram_api_key", k);
       emitSettingsChanged();
       toast.info(t("deepgramKeyValidatedAndSaved"));
     });
-
   const saveGoogleSpeech = () =>
     runAction("save-google-speech", async () => {
-      const apiKey = googleSpeechKey.trim();
-      const projectId = googleProjectId.trim();
-      const region = googleRegion.trim() || "us";
-
-      if (!apiKey) {
-        throw new Error(t("enterGoogleSpeechApiKeyFirst"));
-      }
-      if (!projectId) {
-        throw new Error(t("enterGoogleProjectIdFirst"));
-      }
-
-      await validateGoogleSpeechConfig(apiKey, projectId, region);
+      const k = googleSpeechKey.trim();
+      const p = googleProjectId.trim();
+      const r = googleRegion.trim() || "us";
+      if (!k) throw new Error(t("enterGoogleSpeechApiKeyFirst"));
+      if (!p) throw new Error(t("enterGoogleProjectIdFirst"));
+      await validateGoogleSpeechConfig(k, p, r);
       await Promise.all([
-        saveSetting("speech_google_api_key", apiKey),
-        saveSetting("speech_google_project_id", projectId),
-        saveSetting("speech_google_region", region),
+        saveSetting("speech_google_api_key", k),
+        saveSetting("speech_google_project_id", p),
+        saveSetting("speech_google_region", r),
       ]);
-      setGoogleRegion(region);
+      setGoogleRegion(r);
       emitSettingsChanged();
       toast.info(t("googleSpeechSettingsValidatedAndSaved"));
     });
-
   const saveGemini = () =>
     runAction("save-gemini", async () => {
-      const apiKey = geminiKey.trim();
-      if (!apiKey) {
-        throw new Error(t("enterGeminiApiKeyFirst"));
-      }
-
-      await validateGeminiApiKey(apiKey, "gemini-2.5-flash-lite");
-      await saveSetting("gemini_api_key", apiKey);
+      const k = geminiKey.trim();
+      if (!k) throw new Error(t("enterGeminiApiKeyFirst"));
+      await validateGeminiApiKey(k, "gemini-2.5-flash-lite");
+      await saveSetting("gemini_api_key", k);
       emitSettingsChanged();
       toast.info(t("geminiKeyValidatedAndSaved"));
     });
-
   const saveAlibaba = () =>
     runAction("save-alibaba", async () => {
-      const apiKey = alibabaKey.trim();
-      if (!apiKey) {
-        throw new Error(t("enterAlibabaApiKeyFirst"));
-      }
-
-      await validateAlibabaApiKey(apiKey);
+      const k = alibabaKey.trim();
+      if (!k) throw new Error(t("enterAlibabaApiKeyFirst"));
+      await validateAlibabaApiKey(k);
       await Promise.all([
-        saveSetting("alibaba_api_key", apiKey),
+        saveSetting("alibaba_api_key", k),
         saveSetting("alibaba_base_url", ALIBABA_BASE_URL),
       ]);
       emitSettingsChanged();
       toast.info(t("alibabaKeyValidatedAndSaved"));
     });
-
   const saveOpenAi = () =>
     runAction("save-openai", async () => {
-      const apiKey = openAiKey.trim();
-      if (!apiKey) {
-        throw new Error(t("enterOpenAiApiKeyFirst"));
-      }
-
-      await validateOpenAiApiKey(apiKey);
-      await saveSetting("speech_openai_api_key", apiKey);
+      const k = openAiKey.trim();
+      if (!k) throw new Error(t("enterOpenAiApiKeyFirst"));
+      await validateOpenAiApiKey(k);
+      await saveSetting("speech_openai_api_key", k);
       emitSettingsChanged();
       toast.info(t("openAiKeyValidatedAndSaved"));
     });
+  const saveGroq = () =>
+    runAction("save-groq", async () => {
+      const k = groqKey.trim();
+      if (!k) throw new Error("Enter a Groq API key first.");
+      await validateGroqApiKey(k);
+      await saveSetting("groq_api_key", k);
+      emitSettingsChanged();
+      toast.info("Groq API key validated and saved.");
+    });
 
   return (
-    <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-white">{t("navModels")}</h1>
-        <p className="text-neutral-400">{t("modelsSubtitle")}</p>
-      </header>
-
-      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
-        <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-            <AudioLines className="h-5 w-5 text-blue-500" />
+    <div>
+      {/* ============ SPEECH ============ */}
+      <div className="s-group">
+        <div className="s-group-head">
+          <div className="title-wrap">
+            <span className="title">Speech</span>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">{t("speechModelTitle")}</h2>
-            <p className="text-sm text-neutral-500">
-              {t("speechModelDescription")}
-            </p>
+          <div className="bar" />
+        </div>
+
+        <div className="s-row">
+          <div className="s-icon">
+            <AudioLines strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Speech model</div>
+            <div className="s-desc">Used to transcribe your speech to text.</div>
+          </div>
+          <div className="s-control">
+            <Dropdown<string>
+              value={speechValue}
+              minWidth={260}
+              options={speechFlat.map((option) => ({
+                value: option.value,
+                label: `${option.provider} — ${option.model}`,
+                leading: <ProviderLogo provider={option.provider} />,
+              }))}
+              onChange={(value) => void selectSpeechModel(value)}
+              renderTriggerLabel={(option) => (
+                <>
+                  {option.leading}
+                  <span className="dropdown-label">
+                    {speechSelected.provider} — {speechSelected.model}
+                  </span>
+                </>
+              )}
+            />
           </div>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
-          <Field label={t("providerLabel")}>
-            <Select
-              value={models.speechProvider}
-              onChange={(value) =>
-                void updateSpeechSelection({
-                  provider: value as SpeechProvider,
-                  model: defaultSpeechModel(value as SpeechProvider),
-                })
-              }
-              options={speechProviderOptions}
-              renderLeading={renderProviderOptionIcon}
-            />
-          </Field>
-          <Field label={t("modelLabel")}>
-            <Select
-              value={models.speechModel}
-              onChange={(value) => void updateSpeechSelection({ model: value })}
-              options={speechOptions.map((option) => option.label)}
-            />
-          </Field>
-        </div>
-
-        <MetricsRow
-          metrics={selectedSpeechModel.metrics}
-          firstLabel={t("latencyLabel")}
-          middleLabel={t("accuracyLabel")}
-          t={t}
+        <SpeechKeyRow
+          provider={models.speechProvider}
+          deepgramKey={deepgramKey}
+          setDeepgramKey={setDeepgramKey}
+          googleSpeechKey={googleSpeechKey}
+          setGoogleSpeechKey={setGoogleSpeechKey}
+          googleProjectId={googleProjectId}
+          setGoogleProjectId={setGoogleProjectId}
+          googleRegion={googleRegion}
+          setGoogleRegion={setGoogleRegion}
+          openAiKey={openAiKey}
+          setOpenAiKey={setOpenAiKey}
+          alibabaKey={alibabaKey}
+          setAlibabaKey={setAlibabaKey}
+          action={action}
+          saveDeepgram={saveDeepgram}
+          saveGoogleSpeech={saveGoogleSpeech}
+          saveOpenAi={saveOpenAi}
+          saveAlibaba={saveAlibaba}
         />
-
-        <div>
-          {models.speechProvider === "Local" ? (
-            <LocalParakeetCard selectedSetting={selectedSpeechModel.setting} />
-          ) : (
-            renderSpeechCredentials({
-              t,
-              provider: models.speechProvider,
-              deepgramKey,
-              setDeepgramKey,
-              googleSpeechKey,
-              setGoogleSpeechKey,
-              googleProjectId,
-              setGoogleProjectId,
-              googleRegion,
-              setGoogleRegion,
-              openAiKey,
-              setOpenAiKey,
-              alibabaKey,
-              setAlibabaKey,
-              action,
-              saveDeepgram,
-              saveGoogleSpeech,
-              saveOpenAi,
-              saveAlibaba,
-            })
-          )}
-        </div>
-      </section>
-
-      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
-        <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-            <PenLine className="h-5 w-5 text-blue-500" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">{t("rewriteModelTitle")}</h2>
-            <p className="text-sm text-neutral-500">
-              {t("rewriteModelDescription")}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-8 md:grid-cols-2">
-          <Field label={t("providerLabel")}>
-            <Select
-              value={models.rewriteProvider}
-              onChange={(value) =>
-                void updateRewriteSelection({
-                  provider: value as RewriteProvider,
-                  model: defaultRewriteModel(value as RewriteProvider),
-                })
-              }
-              options={rewriteProviderOptions}
-              renderLeading={renderProviderOptionIcon}
-            />
-          </Field>
-          <Field label={t("modelLabel")}>
-            <Select
-              value={models.rewriteModel}
-              onChange={(value) => void updateRewriteSelection({ model: value })}
-              options={rewriteOptions.map((option) => option.label)}
-            />
-          </Field>
-        </div>
-
-        <MetricsRow
-          metrics={selectedRewriteModel.metrics}
-          firstLabel={t("tfttLabel")}
-          middleLabel={t("throughputLabel")}
-          t={t}
-        />
-
-        <div>
-          {models.rewriteProvider === "Local" ? (
-            <LocalRewriteCard selectedSetting={selectedRewriteModel.setting} />
-          ) : (
-            renderRewriteCredentials({
-              t,
-              provider: models.rewriteProvider,
-              openAiKey,
-              setOpenAiKey,
-              geminiKey,
-              setGeminiKey,
-              alibabaKey,
-              setAlibabaKey,
-              action,
-              saveGemini,
-              saveAlibaba,
-              saveOpenAi,
-            })
-          )}
-        </div>
-      </section>
-    </div>
-  );
-};
-
-const TextInput = ({
-  label,
-  value,
-  onChange,
-  placeholder,
-  password = false,
-  actionLabel,
-  onAction,
-  actionBusy = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  password?: boolean;
-  actionLabel?: string;
-  onAction?: () => void;
-  actionBusy?: boolean;
-}) => {
-  const { t } = useI18n();
-
-  return (
-    <label className="block space-y-2">
-      <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-        {label}
-      </span>
-      <div className="relative">
-        <input
-          type={password ? "password" : "text"}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && onAction && value.trim()) {
-              event.preventDefault();
-              onAction();
-            }
-          }}
-          placeholder={placeholder}
-          className={cn(
-            "w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50",
-            onAction && value.trim() ? "pr-28" : "",
-          )}
-        />
-        {onAction && value.trim() ? (
-          <button
-            type="button"
-            onClick={onAction}
-            disabled={actionBusy}
-            className="absolute right-2 top-1/2 inline-flex min-w-[84px] -translate-y-1/2 items-center justify-center rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white transition-all hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:bg-neutral-700"
-          >
-            {actionBusy ? t("saving") : actionLabel ?? t("save")}
-          </button>
-        ) : null}
       </div>
-    </label>
-  );
-};
 
-const Field = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="space-y-3">
-    <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-      {label}
-    </label>
-    {children}
-  </div>
-);
+      {/* ============ REWRITE ============ */}
+      <div className="s-group">
+        <div className="s-group-head">
+          <div className="title-wrap">
+            <span className="title">Rewrite</span>
+          </div>
+          <div className="bar" />
+        </div>
 
-const MetricsRow = ({
-  metrics,
-  firstLabel,
-  middleLabel,
-  t,
-}: {
-  metrics: ModelMetrics;
-  firstLabel: string;
-  middleLabel: string;
-  t: ReturnType<typeof useI18n>["t"];
-}) => (
-  <div className="flex flex-wrap items-center gap-4 pt-2">
-    <MetricBadge label={firstLabel} value={metrics.latency} tone="emerald" />
-    <MetricBadge label={middleLabel} value={metrics.accuracy} tone="blue" />
-    <MetricBadge label={t("costLabel")} value={metrics.cost} tone="neutral" />
-  </div>
-);
+        <div className="s-row">
+          <div className="s-icon">
+            <PenLine strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Rewrite model</div>
+            <div className="s-desc">Used to clean up your transcribed text.</div>
+          </div>
+          <div className="s-control">
+            <Dropdown<string>
+              value={rewriteValue}
+              minWidth={260}
+              options={rewriteFlat.map((option) => ({
+                value: option.value,
+                label: `${option.provider} — ${option.model}`,
+                leading: <ProviderLogo provider={option.provider} />,
+              }))}
+              onChange={(value) => void selectRewriteModel(value)}
+              renderTriggerLabel={(option) => (
+                <>
+                  {option.leading}
+                  <span className="dropdown-label">
+                    {rewriteSelected.provider} — {rewriteSelected.model}
+                  </span>
+                </>
+              )}
+            />
+          </div>
+        </div>
 
-const MetricBadge = ({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "emerald" | "blue" | "neutral";
-}) => {
-  const toneClasses = {
-    emerald: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
-    blue: "bg-blue-500/10 border-blue-500/20 text-blue-400",
-    neutral: "bg-white/[0.05] border-white/[0.1] text-neutral-400",
-  } as const;
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-full border px-3 py-1.5",
-        toneClasses[tone],
-      )}
-    >
-      <span className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-80">{label}</span>
-      <span className="text-xs font-semibold">{value}</span>
+        <RewriteKeyRow
+          provider={models.rewriteProvider}
+          openAiKey={openAiKey}
+          setOpenAiKey={setOpenAiKey}
+          geminiKey={geminiKey}
+          setGeminiKey={setGeminiKey}
+          alibabaKey={alibabaKey}
+          setAlibabaKey={setAlibabaKey}
+          groqKey={groqKey}
+          setGroqKey={setGroqKey}
+          action={action}
+          saveGemini={saveGemini}
+          saveAlibaba={saveAlibaba}
+          saveOpenAi={saveOpenAi}
+          saveGroq={saveGroq}
+        />
+      </div>
     </div>
   );
 };
 
-const Select = ({
+// ---- Single-line key row (API key input + Save button) -----------------
+function KeyRow({
+  label,
+  description,
+  placeholder,
   value,
   onChange,
-  options,
-  renderLeading,
+  busy,
+  onSave,
 }: {
+  label: string;
+  description?: ReactNode;
+  placeholder: string;
   value: string;
-  onChange: (value: string) => void;
-  options: string[];
-  renderLeading?: (value: string) => ReactNode;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-
+  onChange: (next: string) => void;
+  busy?: boolean;
+  onSave: () => void;
+}) {
   return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/[0.05] focus:ring-1 focus:ring-blue-500/50"
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          {renderLeading ? renderLeading(value) : null}
-          <span className="truncate">{value}</span>
+    <div className="s-row">
+      <div className="s-icon">
+        <KeyRound strokeWidth={2} />
+      </div>
+      <div className="s-body">
+        <div className="s-label">{label}</div>
+        {description ? <div className="s-desc">{description}</div> : null}
+      </div>
+      <div className="s-control">
+        <div className="field-row">
+          <input
+            type="password"
+            value={value}
+            placeholder={placeholder}
+            onChange={(event) => onChange(event.target.value)}
+            className="s-input pw"
+          />
+          <button type="button" className="btn" onClick={onSave} disabled={busy}>
+            {busy ? <Loader2 size={13} strokeWidth={2} className="animate-spin" /> : null}
+            Verify
+          </button>
         </div>
-        <ChevronDown
-          className={cn("h-4 w-4 text-neutral-500 transition-transform", isOpen && "rotate-180")}
-        />
-      </button>
-      <AnimatePresence>
-        {isOpen ? (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 4, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.95 }}
-              className="absolute left-0 top-full z-50 w-full overflow-hidden rounded-xl border border-white/[0.08] bg-[#161616] py-1 shadow-2xl"
-            >
-              {options.map((option) => (
-                <button
-                  key={option}
-                  onClick={() => {
-                    onChange(option);
-                    setIsOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-neutral-400 transition-colors hover:bg-white/[0.05] hover:text-white"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    {renderLeading ? renderLeading(option) : null}
-                    <span className="truncate">{option}</span>
-                  </div>
-                  {value === option ? <Check className="h-4 w-4 text-blue-500" /> : null}
-                </button>
-              ))}
-            </motion.div>
-          </>
-        ) : null}
-      </AnimatePresence>
+      </div>
     </div>
   );
-};
-
-function renderProviderOptionIcon(provider: string) {
-  const assetMap: Record<string, string> = {
-    Google: "/provider-icons/gemini.png",
-    OpenAI: "/provider-icons/openai.png",
-    Deepgram: "/provider-icons/deepgram.png",
-    Alibaba: "/provider-icons/qwen.png",
-  };
-
-  const asset = assetMap[provider];
-  if (asset) {
-    return (
-      <img
-        src={asset}
-        alt=""
-        aria-hidden="true"
-        className="h-4 w-4 rounded-[4px] object-contain"
-      />
-    );
-  }
-
-  return null;
 }
 
-function renderSpeechCredentials({
-  t,
-  provider,
-  deepgramKey,
-  setDeepgramKey,
-  googleSpeechKey,
-  setGoogleSpeechKey,
-  googleProjectId,
-  setGoogleProjectId,
-  googleRegion,
-  setGoogleRegion,
-  openAiKey,
-  setOpenAiKey,
-  alibabaKey,
-  setAlibabaKey,
-  action,
-  saveDeepgram,
-  saveGoogleSpeech,
-  saveOpenAi,
-  saveAlibaba,
-}: {
-  t: ReturnType<typeof useI18n>["t"];
+function ParakeetPackage() {
+  return (
+    <div className="s-row">
+      <div className="s-icon">
+        <FileArchive strokeWidth={2} />
+      </div>
+      <div className="s-body">
+        <div className="s-label">Package</div>
+        <div className="s-desc">600 MB on disk.</div>
+      </div>
+      <div className="s-control">
+        <LocalModelCard modelId="parakeet-tdt-0.6b-v3-int8" />
+      </div>
+    </div>
+  );
+}
+
+function SpeechKeyRow(props: {
   provider: SpeechProvider;
   deepgramKey: string;
-  setDeepgramKey: (value: string) => void;
+  setDeepgramKey: (v: string) => void;
   googleSpeechKey: string;
-  setGoogleSpeechKey: (value: string) => void;
+  setGoogleSpeechKey: (v: string) => void;
   googleProjectId: string;
-  setGoogleProjectId: (value: string) => void;
+  setGoogleProjectId: (v: string) => void;
   googleRegion: string;
-  setGoogleRegion: (value: string) => void;
+  setGoogleRegion: (v: string) => void;
   openAiKey: string;
-  setOpenAiKey: (value: string) => void;
+  setOpenAiKey: (v: string) => void;
   alibabaKey: string;
-  setAlibabaKey: (value: string) => void;
+  setAlibabaKey: (v: string) => void;
   action: string | null;
   saveDeepgram: () => Promise<void>;
   saveGoogleSpeech: () => Promise<void>;
   saveOpenAi: () => Promise<void>;
   saveAlibaba: () => Promise<void>;
 }) {
-  switch (provider) {
+  switch (props.provider) {
+    case "NVIDIA":
+      return <ParakeetPackage />;
     case "Deepgram":
       return (
-        <>
-          <TextInput
-            label={t("deepgramApiKeyLabel")}
-            value={deepgramKey}
-            onChange={setDeepgramKey}
-            placeholder="dg_..."
-            password
-            onAction={() => void saveDeepgram()}
-            actionBusy={action === "save-deepgram"}
-          />
-        </>
-      );
-    case "Google":
-      return (
-        <>
-          <TextInput
-            label={t("speechApiKeyLabel")}
-            value={googleSpeechKey}
-            onChange={setGoogleSpeechKey}
-            placeholder="AIza..."
-            password
-            onAction={() => void saveGoogleSpeech()}
-            actionBusy={action === "save-google-speech"}
-          />
-          <TextInput
-            label={t("cloudProjectIdLabel")}
-            value={googleProjectId}
-            onChange={setGoogleProjectId}
-            placeholder="my-gcp-project"
-          />
-          <TextInput
-            label={t("regionLabel")}
-            value={googleRegion}
-            onChange={setGoogleRegion}
-            placeholder="us"
-          />
-        </>
+        <KeyRow
+          label="Deepgram API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="dg_..."
+          value={props.deepgramKey}
+          onChange={props.setDeepgramKey}
+          busy={props.action === "save-deepgram"}
+          onSave={() => void props.saveDeepgram()}
+        />
       );
     case "OpenAI":
       return (
-        <>
-          <TextInput
-            label={t("openAiApiKeyLabel")}
-            value={openAiKey}
-            onChange={setOpenAiKey}
-            placeholder="sk-..."
-            password
-            onAction={() => void saveOpenAi()}
-            actionBusy={action === "save-openai"}
-          />
-        </>
+        <KeyRow
+          label="OpenAI API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="sk-..."
+          value={props.openAiKey}
+          onChange={props.setOpenAiKey}
+          busy={props.action === "save-openai"}
+          onSave={() => void props.saveOpenAi()}
+        />
       );
     case "Alibaba":
       return (
-        <>
-          <TextInput
-            label={t("apiKey")}
-            value={alibabaKey}
-            onChange={setAlibabaKey}
-            placeholder="sk-..."
-            password
-            onAction={() => void saveAlibaba()}
-            actionBusy={action === "save-alibaba"}
-          />
-        </>
+        <KeyRow
+          label="Alibaba API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="sk-..."
+          value={props.alibabaKey}
+          onChange={props.setAlibabaKey}
+          busy={props.action === "save-alibaba"}
+          onSave={() => void props.saveAlibaba()}
+        />
       );
-    case "Local":
-      // Rendered by the call site, which has selectedSpeechModel in scope.
-      return null;
   }
 }
 
-function renderRewriteCredentials({
-  t,
-  provider,
-  openAiKey,
-  setOpenAiKey,
-  geminiKey,
-  setGeminiKey,
-  alibabaKey,
-  setAlibabaKey,
-  action,
-  saveGemini,
-  saveAlibaba,
-  saveOpenAi,
-}: {
-  t: ReturnType<typeof useI18n>["t"];
+function RewriteKeyRow(props: {
   provider: RewriteProvider;
   openAiKey: string;
-  setOpenAiKey: (value: string) => void;
+  setOpenAiKey: (v: string) => void;
   geminiKey: string;
-  setGeminiKey: (value: string) => void;
+  setGeminiKey: (v: string) => void;
   alibabaKey: string;
-  setAlibabaKey: (value: string) => void;
+  setAlibabaKey: (v: string) => void;
+  groqKey: string;
+  setGroqKey: (v: string) => void;
   action: string | null;
   saveGemini: () => Promise<void>;
   saveAlibaba: () => Promise<void>;
   saveOpenAi: () => Promise<void>;
+  saveGroq: () => Promise<void>;
 }) {
-  switch (provider) {
+  switch (props.provider) {
+    case "Apple":
+      return <AppleFmRow />;
     case "OpenAI":
       return (
-        <>
-          <TextInput
-            label={t("apiKey")}
-            value={openAiKey}
-            onChange={setOpenAiKey}
-            placeholder="sk-..."
-            password
-            onAction={() => void saveOpenAi()}
-            actionBusy={action === "save-openai"}
-          />
-        </>
+        <KeyRow
+          label="OpenAI API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="sk-..."
+          value={props.openAiKey}
+          onChange={props.setOpenAiKey}
+          busy={props.action === "save-openai"}
+          onSave={() => void props.saveOpenAi()}
+        />
       );
     case "Google":
       return (
-        <>
-          <TextInput
-            label={t("geminiApiKeyLabel")}
-            value={geminiKey}
-            onChange={setGeminiKey}
-            placeholder="AIza..."
-            password
-            onAction={() => void saveGemini()}
-            actionBusy={action === "save-gemini"}
-          />
-        </>
+        <KeyRow
+          label="Gemini API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="AIza..."
+          value={props.geminiKey}
+          onChange={props.setGeminiKey}
+          busy={props.action === "save-gemini"}
+          onSave={() => void props.saveGemini()}
+        />
       );
     case "Alibaba":
       return (
-        <>
-          <TextInput
-            label={t("apiKey")}
-            value={alibabaKey}
-            onChange={setAlibabaKey}
-            placeholder="sk-..."
-            password
-            onAction={() => void saveAlibaba()}
-            actionBusy={action === "save-alibaba"}
-          />
-        </>
+        <KeyRow
+          label="Alibaba API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="sk-..."
+          value={props.alibabaKey}
+          onChange={props.setAlibabaKey}
+          busy={props.action === "save-alibaba"}
+          onSave={() => void props.saveAlibaba()}
+        />
       );
-    case "Local":
-      return null;
+    case "Groq":
+      return (
+        <KeyRow
+          label="Groq API key"
+          description="Stored locally in your macOS Keychain."
+          placeholder="gsk_..."
+          value={props.groqKey}
+          onChange={props.setGroqKey}
+          busy={props.action === "save-groq"}
+          onSave={() => void props.saveGroq()}
+        />
+      );
   }
 }
 
-function LocalRewriteCard({ selectedSetting }: { selectedSetting: string }) {
-  if (selectedSetting === APPLE_FM_REWRITE_ID) {
-    return <AppleFmCard />;
-  }
-  const meta = LOCAL_REWRITE_META[selectedSetting] ?? LOCAL_REWRITE_META[LLAMA_LOCAL_MODEL_ID];
-  return (
-    <LocalModelCard
-      modelId={meta.modelId}
-      title={meta.title}
-      subtitle={meta.subtitle}
-      approxSizeMb={meta.approxSizeMb}
-    />
-  );
-}
-
-function AppleFmCard() {
+// ---- Apple FM status row ------------------------------------------------
+function AppleFmRow() {
   const [status, setStatus] = useState<AppleFmAvailability | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -833,33 +554,48 @@ function AppleFmCard() {
     void refresh();
   }, []);
 
-  const { tone, headline, detail } = describeAppleFmStatus(status);
+  const { headline, detail, mint } = describeAppleFmStatus(status);
+
+  // Hide the status pill when the model is fully ready — design only
+  // surfaces it when there's something the user needs to act on.
+  const showStatusPill = status !== null && status !== "available";
 
   return (
-    <div className="space-y-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-white">Apple Foundation Models</h3>
+    <div className="s-row">
+      <div className="s-icon">
+        <Apple strokeWidth={2} />
+      </div>
+      <div className="s-body">
+        <div className="s-label" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          Apple Foundation Models
+          {showStatusPill && (
             <span
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}
+              className="mono-label"
+              style={{
+                fontSize: "9.5px",
+                padding: "2px 8px",
+                borderRadius: "999px",
+                background: mint ? "var(--ai-soft)" : "var(--bg-elev-3)",
+                border: mint
+                  ? "1px solid oklch(0.65 0.17 var(--ai-h) / 0.3)"
+                  : "1px solid var(--hairline)",
+                color: mint ? "var(--ai)" : "var(--text-muted)",
+              }}
             >
               {headline}
             </span>
-          </div>
-          <p className="text-xs leading-5 text-neutral-400">
-            On-device LLM provided by macOS 26+ via the FoundationModels framework.
-            Runs on the Neural Engine, shares weights with the OS, no model download required.
-          </p>
-          <p className="text-[11px] text-neutral-500">{detail}</p>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={checking}
-          className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-neutral-300 transition hover:bg-white/[0.1] disabled:opacity-50"
-        >
-          {checking ? "Checking..." : "Recheck"}
+        <div className="s-desc">{detail}</div>
+      </div>
+      <div className="s-control">
+        <button type="button" className="btn" onClick={() => void refresh()} disabled={checking}>
+          {checking ? (
+            <Loader2 size={13} strokeWidth={2} className="animate-spin" />
+          ) : (
+            <RefreshCw size={13} strokeWidth={2} />
+          )}
+          {checking ? "Checking…" : "Recheck"}
         </button>
       </div>
     </div>
@@ -867,135 +603,38 @@ function AppleFmCard() {
 }
 
 function describeAppleFmStatus(status: AppleFmAvailability | null): {
-  tone: string;
   headline: string;
   detail: string;
+  mint: boolean;
 } {
   switch (status) {
     case "available":
       return {
-        tone: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
         headline: "Ready",
-        detail: "Apple Intelligence is enabled and the model is reachable.",
+        detail: "Apple Intelligence must be enabled.",
+        mint: true,
       };
     case "unavailable":
       return {
-        tone: "border-amber-500/20 bg-amber-500/10 text-amber-400",
         headline: "Not ready",
         detail:
-          "macOS reports the system model isn't reachable. Make sure Apple Intelligence is enabled in System Settings and the model has finished downloading.",
+          "macOS reports the system model isn't reachable. Enable Apple Intelligence in System Settings.",
+        mint: false,
       };
     case "not-built":
       return {
-        tone: "border-amber-500/20 bg-amber-500/10 text-amber-400",
         headline: "Helper missing",
         detail:
-          "The Swift helper wasn't compiled at build time (needs swiftc + macOS 26 SDK). Rebuild the app to enable Apple FM.",
+          "The Swift helper wasn't compiled at build time (needs swiftc + macOS 26 SDK).",
+        mint: false,
       };
     case "unsupported":
       return {
-        tone: "border-neutral-500/20 bg-neutral-500/10 text-neutral-400",
         headline: "macOS only",
         detail: "Apple Foundation Models is only available on macOS 26+.",
+        mint: false,
       };
     case null:
-      return {
-        tone: "border-white/10 bg-white/[0.05] text-neutral-400",
-        headline: "Checking",
-        detail: "Probing the Foundation Models framework...",
-      };
+      return { headline: "Checking", detail: "Probing the Foundation Models framework…", mint: false };
   }
-}
-
-const LOCAL_REWRITE_META: Record<
-  string,
-  { modelId: string; title: string; subtitle: string; approxSizeMb: number }
-> = {
-  [LLAMA_LOCAL_MODEL_ID]: {
-    modelId: LLAMA_LOCAL_MODEL_ID,
-    title: "Llama 3.2 1B Instruct (Q4_K_M)",
-    subtitle:
-      "On-device rewrite via llama.cpp + Metal. Downloaded once from HuggingFace, then runs offline.",
-    approxSizeMb: 770,
-  },
-  [GEMMA_LOCAL_MODEL_ID]: {
-    modelId: GEMMA_LOCAL_MODEL_ID,
-    title: "Google Gemma 3 1B IT (Q4_K_M)",
-    subtitle:
-      "On-device rewrite via llama.cpp + Metal using Google's Gemma 3 1B Instruct model. Downloaded once from HuggingFace.",
-    approxSizeMb: 770,
-  },
-};
-
-const LOCAL_PARAKEET_META: Record<
-  string,
-  { modelId: string; title: string; subtitle: string; approxSizeMb: number }
-> = {
-  [PARAKEET_V2_LOCAL_MODEL_ID]: {
-    modelId: PARAKEET_V2_LOCAL_MODEL_ID,
-    title: "Parakeet TDT 0.6B v2 (int8)",
-    subtitle:
-      "On-device speech recognition via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
-    approxSizeMb: 600,
-  },
-  [PARAKEET_V3_LOCAL_MODEL_ID]: {
-    modelId: PARAKEET_V3_LOCAL_MODEL_ID,
-    title: "Parakeet TDT 0.6B v3 (int8)",
-    subtitle:
-      "Refresh of the v2 model with improved accuracy and multilingual support. Same offline, on-device inference path.",
-    approxSizeMb: 600,
-  },
-};
-
-function LocalParakeetCard({ selectedSetting }: { selectedSetting: string }) {
-  const meta =
-    LOCAL_PARAKEET_META[selectedSetting] ?? LOCAL_PARAKEET_META[PARAKEET_V2_LOCAL_MODEL_ID];
-  const [streaming, setStreaming] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getSetting("parakeet_streaming")
-      .catch(() => "true")
-      .then((value) => {
-        if (!cancelled) setStreaming(value === "true");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const toggleStreaming = async (next: boolean) => {
-    setStreaming(next);
-    try {
-      await saveSetting("parakeet_streaming", next ? "true" : "false");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-      setStreaming(!next);
-    }
-  };
-
-  return (
-    <LocalModelCard
-      modelId={meta.modelId}
-      title={meta.title}
-      subtitle={meta.subtitle}
-      approxSizeMb={meta.approxSizeMb}
-      extras={
-        <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-          <div className="space-y-0.5">
-            <div className="text-sm font-semibold text-white">Stream partial transcripts</div>
-            <p className="text-[11px] text-neutral-400">
-              Re-run the recognizer on a rolling buffer while you speak so text appears in the overlay before you release the hotkey.
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            checked={streaming}
-            onChange={(e) => void toggleStreaming(e.target.checked)}
-            className="h-4 w-4 accent-blue-500"
-          />
-        </label>
-      }
-    />
-  );
 }

@@ -34,9 +34,23 @@ export interface HistoryItem {
   id: number;
   time: string;
   date: string;
+  /**
+   * ISO timestamp from the backend. Kept alongside the formatted `date`
+   * string so dashboard aggregations can apply real date-range math
+   * (e.g. "last 7 days") instead of string-matching the formatted label.
+   */
+  createdAt: string;
   original: string;
   rewritten: string;
   favorited: boolean;
+  /**
+   * Optional API usage telemetry. Populated by the backend for cloud
+   * speech/rewrite providers; absent for local models. Dashboards should
+   * treat missing values as 0 so the totals degrade gracefully until the
+   * backend pipeline starts writing these fields.
+   */
+  tokens?: number;
+  cost?: number;
 }
 
 export const rewriteToneOptions = [
@@ -570,6 +584,7 @@ function mapHistoryEntry(entry: HistoryEntry): HistoryItem {
       day: "numeric",
       year: "numeric",
     }),
+    createdAt: createdAt.toISOString(),
     original: entry.raw_text,
     rewritten: entry.rewritten,
     favorited: entry.favorited,

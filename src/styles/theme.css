@@ -1,5 +1,18 @@
+/*
+ * Theme-driven body/html base + page-transition animation keyframes.
+ *
+ * The actual design tokens (colors, fonts, shadows) live in globals.css.
+ * Toggle the light theme by setting `data-theme="light"` on the <html>
+ * element; tokens flip in place. State is persisted to localStorage by
+ * the topbar theme toggle in Layout.tsx.
+ */
+
 :root {
   color-scheme: dark;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
 }
 
 html,
@@ -12,55 +25,13 @@ html {
   font-size: 16px;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  letter-spacing: -0.01em;
-  background: #050505;
-  color: #f5f5f5;
-}
-
-body.main-window {
-  background:
-    radial-gradient(circle at top, #101010 0%, #060606 48%, #030303 100%);
-}
-
-.main-shell {
-  --sidebar-width: 16rem;
-}
-
-.main-window-pattern,
-.main-window-scrim,
-.main-window-glow {
-  position: fixed;
-  top: 0;
-  right: 0;
-  left: var(--sidebar-width);
-  pointer-events: none;
-}
-
-.main-window-pattern {
-  bottom: 0;
-  z-index: 0;
-  opacity: 0.48;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.2) 1.1px, transparent 1.1px);
-  background-size: 19px 19px;
-}
-
-.main-window-scrim {
-  bottom: 0;
-  z-index: 0;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.main-window-glow {
-  height: 520px;
-  z-index: 0;
-  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.045), transparent 68%);
-}
-
-body.overlay-window {
-  overflow: hidden;
-  background: transparent !important;
+  letter-spacing: -0.005em;
 }
 
 [data-sonner-toaster][data-sonner-theme="dark"] {
@@ -68,13 +39,13 @@ body.overlay-window {
   --info-border: hsl(220, 55%, 22%);
 }
 
+/* Overlay-window keyframes — used by the floating "Listening..." pill. */
 @keyframes overlay-audio-line-a {
   0%,
   100% {
     opacity: 0.65;
     transform: scaleY(0.55);
   }
-
   50% {
     opacity: 1;
     transform: scaleY(1);
@@ -87,12 +58,10 @@ body.overlay-window {
     opacity: 0.7;
     transform: scaleY(0.85);
   }
-
   35% {
     opacity: 1;
     transform: scaleY(0.45);
   }
-
   70% {
     opacity: 0.9;
     transform: scaleY(1.1);
@@ -105,7 +74,6 @@ body.overlay-window {
     opacity: 0.75;
     transform: scaleY(0.4);
   }
-
   45% {
     opacity: 1;
     transform: scaleY(1.15);
@@ -117,12 +85,10 @@ body.overlay-window {
     opacity: 0.92;
     transform: rotate(0deg);
   }
-
   50% {
     opacity: 1;
     transform: rotate(8deg);
   }
-
   100% {
     opacity: 0.92;
     transform: rotate(0deg);
@@ -163,43 +129,30 @@ body.overlay-window {
   animation: overlay-rewrite-pen 1.05s ease-in-out infinite;
 }
 
+/* Hamlet sidebar shimmer — used on the live-status card in the sidebar. */
+@keyframes shimmer {
+  0% {
+    left: -50%;
+  }
+  60%,
+  100% {
+    left: 150%;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .overlay-audio-lines path,
   .overlay-rewrite-pen path:nth-of-type(2) {
     animation: none !important;
   }
-}
-
-body,
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-button,
-a,
-select,
-input[type="checkbox"],
-input[type="radio"],
-[role="button"] {
-  cursor: pointer;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: #0a0a0a;
-}
-
-::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: #2a2a2a;
 }

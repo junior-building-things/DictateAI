@@ -1,6 +1,6 @@
 [package]
 name = "dictateai"
-version = "1.0.10"
+version = "1.0.11"
 description = "DictateAI desktop app"
 authors = ["you"]
 license = "MIT"
@@ -48,8 +48,11 @@ tauri-plugin-process = "2"
 sherpa-rs = { version = "0.6", features = ["download-binaries", "static"] }
 
 # macOS native CGEvent for keyboard simulation (thread-safe unlike HIToolbox)
+# plus objc for class-swizzling the overlay NSWindow into an NSPanel so it can
+# render over native fullscreen apps (FullScreenAuxiliary requires NSPanel).
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"
+objc = "0.2"
 
 # Local LLM rewrite via llama.cpp with Metal acceleration. macOS-only for now;
 # extend to other targets when we add cross-platform builds.
@@ -57,6 +60,11 @@ llama-cpp-2 = { version = "0.1", features = ["metal"] }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Per-user secret storage via the platform-native keystore (macOS Keychain).
+# Used for API keys so they're encrypted at rest and not readable from disk
+# by other processes. Scoped to apple-native only since this app is macOS-only.
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

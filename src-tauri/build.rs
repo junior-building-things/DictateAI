@@ -13,13 +13,21 @@ fn main() {
     tauri_build::build()
 }
 
-/// Compile the Swift helper that talks to Apple's Foundation Models framework.
-/// Best-effort: if swiftc isn't installed, the source is missing, or the
-/// macOS 26 SDK isn't available, we emit a warning and continue. Callers
-/// detect a missing helper via `option_env!("APPLE_FM_HELPER_PATH")` and
-/// surface a runtime error if the user actually tries to use Apple FM.
+/// Compile the Swift helper that talks to Apple's Foundation Models framework
+/// and place it at a stable path under `src-tauri/binaries/` so Tauri's
+/// bundler can include it in `Contents/Resources/`. Without this, the helper
+/// would only exist at a `target/.../build/.../out/` path that doesn't survive
+/// distribution, and the released DMG would never be able to find it.
+///
+/// Best-effort: if swiftc isn't installed or the macOS 26 SDK isn't available,
+/// we drop in a tiny shell-script stub that just exits with the helper's
+/// "model unavailable" code (3). The bundle build still succeeds and runtime
+/// degrades gracefully — `apple_fm_availability` returns "unavailable" and
+/// users see a clear status in the Models page.
 #[cfg(target_os = "macos")]
 fn build_apple_fm_helper() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::process::Command;
 
@@ -27,16 +35,20 @@ fn build_apple_fm_helper() {
     let source = PathBuf::from(&manifest_dir)
         .join("swift")
         .join("apple_fm_helper.swift");
+    let bundle_dir = PathBuf::from(&manifest_dir).join("binaries");
+    let bundle_path = bundle_dir.join("apple-fm-helper");
+
+    // Ensure the directory exists so the Tauri bundler always finds the
+    // resource entry it expects, even if compilation fails below.
+    let _ = fs::create_dir_all(&bundle_dir);
 
     if !source.exists() {
-        println!("cargo:warning=apple_fm_helper.swift missing; Apple FM rewrite disabled");
+        println!("cargo:warning=apple_fm_helper.swift missing; bundling stub");
+        write_stub(&bundle_path);
         return;
     }
 
     println!("cargo:rerun-if-changed={}", source.display());
-
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let bin_path = PathBuf::from(&out_dir).join("apple-fm-helper");
 
     let result = Command::new("swiftc")
         .args([
@@ -48,29 +60,47 @@ fn build_apple_fm_helper() {
             "arm64-apple-macos26.0",
             "-o",
         ])
-        .arg(&bin_path)
+        .arg(&bundle_path)
         .arg(&source)
         .output();
 
     match result {
         Ok(out) if out.status.success() => {
+            // Path is baked into the Rust binary for dev-mode lookups —
+            // `cargo run` and `tauri dev` resolve via this env var. Production
+            // builds also have it but additionally fall back to the bundled
+            // resource path via `current_exe`.
             println!(
                 "cargo:rustc-env=APPLE_FM_HELPER_PATH={}",
-                bin_path.display()
+                bundle_path.display()
             );
+            let _ = fs::set_permissions(&bundle_path, fs::Permissions::from_mode(0o755));
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             println!(
-                "cargo:warning=swiftc failed to build apple_fm_helper (Apple FM rewrite disabled): {}",
+                "cargo:warning=swiftc failed to build apple_fm_helper; bundling stub: {}",
                 stderr.trim()
             );
+            write_stub(&bundle_path);
         }
         Err(e) => {
             println!(
-                "cargo:warning=swiftc not available, Apple FM rewrite disabled: {}",
+                "cargo:warning=swiftc not available; bundling stub: {}",
                 e
             );
+            write_stub(&bundle_path);
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn write_stub(path: &std::path::Path) {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    let stub = "#!/bin/sh\n\
+        echo 'apple-fm-helper: not built (requires macOS 26 SDK + swiftc at build time)' 1>&2\n\
+        exit 3\n";
+    let _ = fs::write(path, stub);
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o755));
 }

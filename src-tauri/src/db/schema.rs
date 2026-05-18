@@ -46,8 +46,9 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             ('alibaba_api_key', ''),
             ('alibaba_base_url', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'),
             ('gemini_api_key', ''),
-            ('rewrite_model', 'gemini-2.5-flash-lite'),
-            ('rewrite_provider', 'Google'),
+            ('groq_api_key', ''),
+            ('rewrite_model', 'llama-3.1-8b-instant'),
+            ('rewrite_provider', 'Groq'),
             ('rewrite_system_prompt', ''),
             ('rewrite_tone', 'neutral'),
             ('rewrite_use_vocabulary', 'true'),
@@ -59,8 +60,8 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             ('rewrite_add_punctuation', 'true'),
             ('hotkey', 'CommandOrControl+S'),
             ('hotkey_mode', 'hold'),
-            ('speech_model', 'gpt-4o-mini-transcribe'),
-            ('speech_provider', 'OpenAI'),
+            ('speech_model', 'parakeet-tdt-0.6b-v3-int8'),
+            ('speech_provider', 'NVIDIA'),
             ('speech_deepgram_api_key', ''),
             ('speech_nvidia_api_key', ''),
             ('speech_nvidia_base_url', 'http://127.0.0.1:9000'),
@@ -115,6 +116,25 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         UPDATE settings SET value = 'qwen2.5-7b-instruct'
             WHERE key = 'rewrite_model'
               AND value = 'qwen3-8b';
+
+        -- Migrate users off the bundled Llama 3.2 1B and Gemma 3 1B local
+        -- rewrites (catalog entries removed). Land them on Apple Foundation
+        -- Models, which is the closest in-spirit on-device replacement.
+        UPDATE settings SET value = 'apple-fm-system'
+            WHERE key = 'rewrite_model'
+              AND value IN ('llama-3.2-1b-instruct-q4km', 'gemma-3-1b-it-q4km', 'local-llm');
+
+        -- Speech: 'Local' provider replaced by per-vendor names. Parakeet is
+        -- the only local speech model we ship today, so 'Local' implies NVIDIA.
+        UPDATE settings SET value = 'NVIDIA'
+            WHERE key = 'speech_provider'
+              AND value = 'Local';
+
+        -- Rewrite: 'Local' was either Apple FM or one of the now-removed
+        -- llama.cpp GGUFs. Both end up at Apple now.
+        UPDATE settings SET value = 'Apple'
+            WHERE key = 'rewrite_provider'
+              AND value = 'Local';
         ",
     )?;
 

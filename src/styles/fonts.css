@@ -1,10 +1,5 @@
-:root {
-  font-family:
-    "SF Pro Text",
-    "SF Pro Display",
-    "Inter",
-    -apple-system,
-    BlinkMacSystemFont,
-    system-ui,
-    sans-serif;
-}
+/*
+ * Geist + Geist Mono are loaded via the <link> in index.html.
+ * This file exists to expose the font stacks as CSS variables for any
+ * non-CSS consumer (Tailwind config, etc.). Variables live in globals.css.
+ */

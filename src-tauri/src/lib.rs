@@ -113,6 +113,13 @@ pub fn run() {
             schema::run_migrations(&conn)?;
             log::info!("Database initialized at {:?}", db_path);
 
+            // Move any API keys still stored plaintext in the settings table
+            // into the macOS Keychain. Idempotent — only does work if there
+            // are leftovers from older versions.
+            if let Err(e) = settings::migrate_secrets_to_keychain(&conn) {
+                log::warn!("Secret migration to Keychain failed (non-fatal): {}", e);
+            }
+
             // Create app state
             let app_state = AppState::new(conn);
             app.manage(app_state);
@@ -192,6 +199,7 @@ pub fn run() {
             commands::validate_google_speech_config,
             commands::validate_nvidia_config,
             commands::validate_alibaba_api_key,
+            commands::validate_groq_api_key,
             commands::get_app_state,
             commands::cancel_processing,
             commands::start_manual_recording,

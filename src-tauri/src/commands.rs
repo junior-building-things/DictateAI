@@ -6,6 +6,7 @@ use crate::hotkey::handler::HotkeyState;
 use crate::processing_mode;
 use crate::rewrite::alibaba;
 use crate::rewrite::gemini;
+use crate::rewrite::groq;
 use crate::rewrite::prompt;
 use crate::state::{AppState, STATE_IDLE};
 use crate::transcribe::api;
@@ -355,6 +356,18 @@ pub async fn validate_nvidia_config(
 }
 
 #[tauri::command]
+pub async fn validate_groq_api_key(
+    state: State<'_, AppState>,
+    api_key: String,
+) -> Result<bool, String> {
+    let client = state.http_client.clone();
+    groq::validate_api_key(&client, &api_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn validate_alibaba_api_key(
     state: State<'_, AppState>,
     api_key: String,
@@ -388,7 +401,12 @@ pub fn cancel_processing(app: AppHandle, state: State<AppState>) {
     state.cancel_current_run();
     state.set_state(STATE_IDLE);
     let _ = app.emit("state-changed", "idle");
-    crate::overlay::hide(&app);
+    // Clean up any "Listening..." placeholder left in the focused field.
+    if let Some(len) = state.pending_placeholder.lock().unwrap().take() {
+        if let Err(e) = crate::paste::simulate::delete_placeholder(len) {
+            log::warn!("Could not delete recording placeholder: {}", e);
+        }
+    }
 }
 
 #[tauri::command]

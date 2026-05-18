@@ -24,6 +24,11 @@ pub struct AppState {
     /// the cache is invalidated when the user switches between e.g. Llama 3.2
     /// and Gemma 3.
     pub local_llm: Mutex<Option<(String, Arc<LocalLlmEngine>)>>,
+    /// Length (in chars) of a "Listening..." placeholder that the hotkey
+    /// handler typed into the focused text field at recording-start. Consumed
+    /// by the pipeline deliver step (replaced with the final rewrite) or the
+    /// pipeline outer cleanup (deleted on failure / empty rewrite).
+    pub pending_placeholder: Mutex<Option<usize>>,
 }
 
 impl AppState {
@@ -35,6 +40,7 @@ impl AppState {
             run_generation: AtomicU64::new(0),
             parakeet_engine: Mutex::new(None),
             local_llm: Mutex::new(None),
+            pending_placeholder: Mutex::new(None),
         }
     }
 

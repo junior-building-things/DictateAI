@@ -1,14 +1,13 @@
-export type SpeechProvider = "Deepgram" | "Google" | "OpenAI" | "Alibaba" | "Local";
-export type RewriteProvider = "OpenAI" | "Google" | "Alibaba" | "Local";
+export type SpeechProvider = "Alibaba" | "Deepgram" | "NVIDIA" | "OpenAI";
+export type RewriteProvider = "Alibaba" | "Apple" | "Google" | "Groq" | "OpenAI";
 
-/// Local-engine model IDs that pair with the "Local" provider above.
-/// Kept in sync with the Rust-side `LocalModelSpec.id` constants.
+/// Local-engine model IDs that pair with the on-device providers (NVIDIA for
+/// speech, Apple for rewrite). Kept in sync with the Rust-side
+/// `LocalModelSpec.id` constants and the `apple-fm-system` rewrite tag.
 export const PARAKEET_V2_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v2-int8";
 export const PARAKEET_V3_LOCAL_MODEL_ID = "parakeet-tdt-0.6b-v3-int8";
 /// Back-compat alias — earlier code imported this constant for the v2 model.
 export const PARAKEET_LOCAL_MODEL_ID = PARAKEET_V2_LOCAL_MODEL_ID;
-export const LLAMA_LOCAL_MODEL_ID = "llama-3.2-1b-instruct-q4km";
-export const GEMMA_LOCAL_MODEL_ID = "gemma-3-1b-it-q4km";
 export const APPLE_FM_REWRITE_ID = "apple-fm-system";
 
 export interface ModelOption {
@@ -24,10 +23,22 @@ export interface ModelMetrics {
   cost: string;
 }
 
-export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "OpenAI";
-export const DEFAULT_REWRITE_PROVIDER: RewriteProvider = "Google";
+export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "NVIDIA";
+export const DEFAULT_REWRITE_PROVIDER: RewriteProvider = "Groq";
 
 const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
+  Alibaba: [
+    {
+      label: "qwen3-asr-flash",
+      setting: "qwen3-asr-flash",
+      description: "Alibaba Model Studio ASR through the OpenAI-compatible chat endpoint.",
+      metrics: {
+        latency: "90-120 ms TTFT",
+        accuracy: "3-6% WER",
+        cost: "$0.0021/min",
+      },
+    },
+  ],
   Deepgram: [
     {
       label: "nova-3",
@@ -40,15 +51,27 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
       },
     },
   ],
-  Google: [
+  NVIDIA: [
     {
-      label: "chirp_3",
-      setting: "chirp_3",
-      description: "Google Cloud Speech-to-Text v2 Chirp 3.",
+      label: "parakeet-tdt-0.6b-v2-int8",
+      setting: "parakeet-tdt-0.6b-v2-int8",
+      description:
+        "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
       metrics: {
-        latency: "300-600 ms",
+        latency: "100-300 ms",
+        accuracy: "5-7% WER",
+        cost: "Free (on-device)",
+      },
+    },
+    {
+      label: "parakeet-tdt-0.6b-v3-int8",
+      setting: "parakeet-tdt-0.6b-v3-int8",
+      description:
+        "On-device NVIDIA Parakeet TDT 0.6B v3 (int8). Refresh of v2 with improved accuracy and multilingual support.",
+      metrics: {
+        latency: "100-300 ms",
         accuracy: "4-6% WER",
-        cost: "$0.016/min",
+        cost: "Free (on-device)",
       },
     },
   ],
@@ -74,64 +97,31 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
       },
     },
   ],
-  Alibaba: [
-    {
-      label: "qwen3-asr-flash",
-      setting: "qwen3-asr-flash",
-      description: "Alibaba Model Studio ASR through the OpenAI-compatible chat endpoint.",
-      metrics: {
-        latency: "90-120 ms TTFT",
-        accuracy: "3-6% WER",
-        cost: "$0.0021/min",
-      },
-    },
-  ],
-  Local: [
-    {
-      label: "parakeet-tdt-0.6b-v2-int8",
-      setting: "parakeet-tdt-0.6b-v2-int8",
-      description:
-        "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
-      metrics: {
-        latency: "100-300 ms",
-        accuracy: "5-7% WER",
-        cost: "Free (on-device)",
-      },
-    },
-    {
-      label: "parakeet-tdt-0.6b-v3-int8",
-      setting: "parakeet-tdt-0.6b-v3-int8",
-      description:
-        "On-device NVIDIA Parakeet TDT 0.6B v3 (int8). Refresh of v2 with improved accuracy and multilingual support.",
-      metrics: {
-        latency: "100-300 ms",
-        accuracy: "4-6% WER",
-        cost: "Free (on-device)",
-      },
-    },
-  ],
 };
 
 const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
-  OpenAI: [
+  Alibaba: [
     {
-      label: "gpt-5-mini",
-      setting: "gpt-5-mini",
-      description: "OpenAI's smaller GPT-5 rewrite model.",
+      label: "qwen2.5-7b-instruct",
+      setting: "qwen2.5-7b-instruct",
+      description: "Alibaba's compact instruction-tuned Qwen 2.5 model.",
       metrics: {
-        latency: "700-1100 ms",
-        accuracy: "74 tokens/s",
-        cost: "$0.000224/req",
+        latency: "0.5-1.5 s typical (depends on GPU)",
+        accuracy: "60-120 tokens/s",
+        cost: "$0.0000105/req",
       },
     },
+  ],
+  Apple: [
     {
-      label: "gpt-5-nano",
-      setting: "gpt-5-nano",
-      description: "The lightest GPT-5 rewrite option.",
+      label: "apple-fm-system",
+      setting: "apple-fm-system",
+      description:
+        "Apple's on-device foundation model (macOS 26+). Runs on the Neural Engine via the FoundationModels framework — no model download, no cold start.",
       metrics: {
-        latency: "600-900 ms",
-        accuracy: "127 tokens/s",
-        cost: "$0.000056/req",
+        latency: "200-500 ms",
+        accuracy: "Always-resident",
+        cost: "Free (on-device)",
       },
     },
   ],
@@ -157,50 +147,49 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
       },
     },
   ],
-  Alibaba: [
+  Groq: [
     {
-      label: "qwen2.5-7b-instruct",
-      setting: "qwen2.5-7b-instruct",
-      description: "Alibaba's compact instruction-tuned Qwen 2.5 model.",
+      label: "llama-3.1-8b-instant",
+      setting: "llama-3.1-8b-instant",
+      description:
+        "Meta Llama 3.1 8B on Groq's LPU silicon. The default — typical rewrite under 300 ms with strong quality for transcript cleanup.",
       metrics: {
-        latency: "0.5-1.5 s typical (depends on GPU)",
-        accuracy: "60-120 tokens/s",
-        cost: "$0.0000105/req",
+        latency: "150-300 ms",
+        accuracy: "1100+ tokens/s",
+        cost: "$0.00001/req",
+      },
+    },
+    {
+      label: "llama-3.3-70b-versatile",
+      setting: "llama-3.3-70b-versatile",
+      description:
+        "Meta Llama 3.3 70B on Groq. Slower than 8B but a notch better on hard reasoning (self-correction, garbled-word fixes).",
+      metrics: {
+        latency: "300-500 ms",
+        accuracy: "750+ tokens/s",
+        cost: "$0.00006/req",
       },
     },
   ],
-  Local: [
+  OpenAI: [
     {
-      label: "llama-3.2-1b-instruct-q4km",
-      setting: "llama-3.2-1b-instruct-q4km",
-      description:
-        "Llama 3.2 1B Instruct (Q4_K_M) via llama.cpp with Metal acceleration. Runs offline.",
+      label: "gpt-5-mini",
+      setting: "gpt-5-mini",
+      description: "OpenAI's smaller GPT-5 rewrite model.",
       metrics: {
-        latency: "300-700 ms",
-        accuracy: "100-200 tokens/s",
-        cost: "Free (on-device)",
+        latency: "700-1100 ms",
+        accuracy: "74 tokens/s",
+        cost: "$0.000224/req",
       },
     },
     {
-      label: "gemma-3-1b-it-q4km",
-      setting: "gemma-3-1b-it-q4km",
-      description:
-        "Google Gemma 3 1B IT (Q4_K_M) via llama.cpp with Metal acceleration. Runs offline.",
+      label: "gpt-5-nano",
+      setting: "gpt-5-nano",
+      description: "The lightest GPT-5 rewrite option.",
       metrics: {
-        latency: "300-700 ms",
-        accuracy: "100-200 tokens/s",
-        cost: "Free (on-device)",
-      },
-    },
-    {
-      label: "apple-fm-system",
-      setting: "apple-fm-system",
-      description:
-        "Apple's on-device foundation model (macOS 26+). Runs on the Neural Engine via the FoundationModels framework — no model download, no cold start.",
-      metrics: {
-        latency: "200-500 ms",
-        accuracy: "Always-resident",
-        cost: "Free (on-device)",
+        latency: "600-900 ms",
+        accuracy: "127 tokens/s",
+        cost: "$0.000056/req",
       },
     },
   ],
@@ -226,12 +215,15 @@ const legacyRewriteAliases: Record<string, string> = {
   "qwen3-8b": "qwen2.5-7b-instruct",
   "Rule-based Cleanup": firstRewriteSetting(DEFAULT_REWRITE_PROVIDER),
   // Initial local-LLM rollout shipped a placeholder setting value;
-  // migrate it to the explicit Llama spec id.
-  "local-llm": "llama-3.2-1b-instruct-q4km",
+  // migrate it to Apple FM (closest in-spirit replacement now that the
+  // bundled Llama / Gemma 1B GGUFs have been removed from the catalog).
+  "local-llm": APPLE_FM_REWRITE_ID,
+  "llama-3.2-1b-instruct-q4km": APPLE_FM_REWRITE_ID,
+  "gemma-3-1b-it-q4km": APPLE_FM_REWRITE_ID,
 };
 
-export const speechProviderOptions = Object.keys(speechCatalog) as SpeechProvider[];
-export const rewriteProviderOptions = Object.keys(rewriteCatalog) as RewriteProvider[];
+export const speechProviderOptions = (Object.keys(speechCatalog) as SpeechProvider[]).sort();
+export const rewriteProviderOptions = (Object.keys(rewriteCatalog) as RewriteProvider[]).sort();
 
 export function getSpeechModelOptions(provider: SpeechProvider) {
   return speechCatalog[provider];

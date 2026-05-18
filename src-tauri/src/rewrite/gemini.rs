@@ -150,7 +150,7 @@ pub async fn rewrite(
         .ok_or_else(|| AppError::Rewrite("Empty response from Gemini".into()))?;
 
     let text = text.trim().to_string();
-    log::info!("Rewritten text: \"{}\"", text);
+    log::info!("Gemini returned {} chars", text.chars().count());
     Ok(text)
 }
 

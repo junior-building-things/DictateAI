@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "DictateAI",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "identifier": "com.dictateai.app",
   "build": {
     "frontendDist": "../dist",
@@ -23,8 +23,8 @@
       {
         "title": "",
         "label": "overlay",
-        "width": 260,
-        "height": 72,
+        "width": 220,
+        "height": 40,
         "resizable": false,
         "visible": false,
         "decorations": false,
@@ -67,8 +67,8 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "infoPlist": "Info.plist",
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": "-"
-    }
+      "minimumSystemVersion": "10.15"
+    },
+    "resources": ["binaries/apple-fm-helper"]
   }
 }

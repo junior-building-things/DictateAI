@@ -1,6 +1,15 @@
-import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { CornerDownRight, Hand, Keyboard, Mic, MousePointerClick } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Accessibility,
+  Check,
+  ClipboardPaste,
+  Hand,
+  Keyboard,
+  Lock,
+  Mic,
+  MousePointerClick,
+  Pencil,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   checkAccessibility,
@@ -10,364 +19,239 @@ import {
 import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { formatHotkeyToken, getMicrophonePermissionState, type MicrophonePermissionState } from "../../lib/ui";
-import { cn } from "../../lib/utils";
 
+/**
+ * Settings → General. Matches the design file's `general:` panel:
+ *   Group "Permissions": Microphone row, Accessibility row.
+ *   Group "Preferences": Global hotkey row, Trigger mode row, Auto-paste row.
+ * Permission controls render as a `.btn.btn-static` (✓ Enabled) when granted,
+ * or a `.btn.btn-ai` (↗ Action needed) when the user still needs to grant it.
+ * Trigger mode uses the compact `.hero-mode` pill toggle (not large tiles).
+ */
 export const Home = () => {
   const { t } = useI18n();
   const { hotkeySettings, setHotkeySettings } = useAppStore();
-  const [microphonePermission, setMicrophonePermission] =
-    useState<MicrophonePermissionState>("unknown");
-  const [accessibilityEnabled, setAccessibilityEnabled] = useState<boolean | null>(null);
-  const [isRecordingHotkey, setIsRecordingHotkey] = useState(false);
+  const [micPerm, setMicPerm] = useState<MicrophonePermissionState>("unknown");
+  const [axEnabled, setAxEnabled] = useState<boolean | null>(null);
+  const [recording, setRecording] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
-  const syncPermissions = useCallback(async () => {
-    const [nextMicrophone, nextAccessibility] = await Promise.all([
+  const sync = useCallback(async () => {
+    const [m, a] = await Promise.all([
       getMicrophonePermissionState(),
       checkAccessibility().catch(() => null),
     ]);
-
-    setMicrophonePermission(nextMicrophone);
-    setAccessibilityEnabled(nextAccessibility);
+    setMicPerm(m);
+    setAxEnabled(a);
   }, []);
 
   useEffect(() => {
-    void syncPermissions();
-
-    const handleFocus = () => {
-      void syncPermissions();
-    };
-
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
-
+    void sync();
+    const onFocus = () => void sync();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
     return () => {
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [syncPermissions]);
+  }, [sync]);
 
-  const requestPermission = async (kind: "microphone" | "accessibility") => {
-    const alreadyEnabled =
-      kind === "microphone"
-        ? microphonePermission === "granted"
-        : accessibilityEnabled === true;
-
-    if (alreadyEnabled) {
-      return;
-    }
-
-    if (kind === "microphone") {
+  const grant = async (kind: "mic" | "ax") => {
+    if (kind === "mic") {
       if (navigator.mediaDevices?.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
         stream?.getTracks().forEach((track) => track.stop());
       }
-
       await promptMicrophonePermission().catch(() => undefined);
     } else {
       await promptAccessibilityPermission().catch(() => undefined);
     }
-
-    await syncPermissions();
+    await sync();
   };
 
-  const handleRecordHotkey = () => {
-    setIsRecordingHotkey(true);
+  const captureHotkey = () => {
+    setRecording(true);
     toast.info(t("pressShortcutToast"));
-
     const handler = (event: KeyboardEvent) => {
       event.preventDefault();
-
       const parts: string[] = [];
       if (event.metaKey || event.ctrlKey) parts.push("⌘");
       if (event.altKey) parts.push("⌥");
       if (event.shiftKey) parts.push("Shift");
-
       const keyToken = formatHotkeyToken(event.code, event.key);
-      if (keyToken) {
-        parts.push(keyToken);
-      }
-
-      if (parts.length === 0 || !keyToken) {
-        return;
-      }
-
-      const nextHotkey = parts.join(" + ");
-      void setHotkeySettings({ hotkey: nextHotkey });
+      if (!keyToken || parts.length === 0) return;
+      parts.push(keyToken);
+      void setHotkeySettings({ hotkey: parts.join(" + ") });
       toast.info(t("hotkeyUpdatedToast"));
-      cleanup(handler);
+      cleanup();
     };
-
-    const cleanup = (handlerToRemove: (event: KeyboardEvent) => void) => {
-      window.removeEventListener("keydown", handlerToRemove);
+    const cleanup = () => {
+      window.removeEventListener("keydown", handler);
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
-      setIsRecordingHotkey(false);
+      setRecording(false);
     };
-
     window.addEventListener("keydown", handler);
-    timeoutRef.current = window.setTimeout(() => cleanup(handler), 5000);
+    timeoutRef.current = window.setTimeout(cleanup, 5000);
   };
 
-  const microphoneEnabled = microphonePermission === "granted";
-  const accessibilityGranted = accessibilityEnabled === true;
-  const handleAutoPasteToggle = () => {
-    const nextValue = !hotkeySettings.autoPaste;
-    void setHotkeySettings({ autoPaste: nextValue });
-    toast.info(nextValue ? t("autoPasteEnabledToast") : t("autoPasteDisabledToast"));
-  };
-
-  const handleModeChange = (mode: "hold" | "toggle") => {
-    if (hotkeySettings.mode === mode) {
-      return;
-    }
-
-    void setHotkeySettings({ mode });
-    toast.info(
-      mode === "hold" ? t("holdToDictateEnabledToast") : t("tapToDictateEnabledToast"),
-    );
-  };
+  const micGranted = micPerm === "granted";
+  const axGranted = axEnabled === true;
+  const hotkeyTokens = hotkeySettings.hotkey
+    .split("+")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return (
-    <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-white">{t("navHome")}</h1>
-        <p className="text-neutral-400">{t("homeSubtitle")}</p>
-      </header>
+    <div>
+      {/* Group: Permissions */}
+      <div className="s-group">
+        <div className="s-group-head">
+          <div className="title-wrap">
+            <span className="title">Permissions</span>
+          </div>
+          <div className="bar" />
+        </div>
 
-      <div className="grid gap-x-4 gap-y-8 md:grid-cols-2">
-        <PermissionCard
-          icon={
-            <Mic
-              className={cn(
-                "h-5 w-5",
-                microphoneEnabled ? "text-blue-500" : "text-neutral-400",
-              )}
-            />
-          }
-          label={t("microphoneLabel")}
-          description={
-            microphoneEnabled ? t("permissionEnabledDescription") : t("permissionTapToEnableDescription")
-          }
-          accent="blue"
-          actionable={!microphoneEnabled}
-          onClick={() => void requestPermission("microphone")}
-        />
-        <PermissionCard
-          icon={
-            <CornerDownRight
-              className={cn(
-                "h-5 w-5",
-                accessibilityGranted ? "text-blue-500" : "text-neutral-400",
-              )}
-            />
-          }
-          label={t("accessibilityLabel")}
-          description={
-            accessibilityGranted ? t("permissionEnabledDescription") : t("permissionTapToEnableDescription")
-          }
-          accent="blue"
-          actionable={!accessibilityGranted}
-          onClick={() => void requestPermission("accessibility")}
-        />
+        <div className="s-row">
+          <div className="s-icon">
+            <Mic strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Microphone</div>
+            <div className="s-desc">Allow DictateAI to use your microphone for dictation.</div>
+          </div>
+          <div className="s-control">
+            <PermissionAction granted={micGranted} onGrant={() => void grant("mic")} />
+          </div>
+        </div>
+
+        <div className="s-row">
+          <div className="s-icon">
+            <Accessibility strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Accessibility</div>
+            <div className="s-desc">Allow DictateAI to use accessibility settings for auto-paste.</div>
+          </div>
+          <div className="s-control">
+            <PermissionAction granted={axGranted} onGrant={() => void grant("ax")} />
+          </div>
+        </div>
       </div>
 
-      <section className="space-y-8 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
-        <div className="flex items-center gap-3 border-b border-white/[0.06] pb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-            <Keyboard className="h-5 w-5 text-blue-500" />
+      {/* Group: Preferences */}
+      <div className="s-group">
+        <div className="s-group-head">
+          <div className="title-wrap">
+            <span className="title">Preferences</span>
           </div>
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold text-white">{t("globalHotkey")}</h2>
-            <p className="text-sm text-neutral-500">
-              {t("hotkeySectionDescription")}
-            </p>
+          <div className="bar" />
+        </div>
+
+        <div className="s-row">
+          <div className="s-icon">
+            <Keyboard strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Global hotkey</div>
+            <div className="s-desc">Set the hotkey that triggers DictateAI.</div>
+          </div>
+          <div className="s-control">
+            <div className="field-row">
+              {hotkeyTokens.length > 0 && (
+                <div className="kbd-display">
+                  {hotkeyTokens.map((token, i) => (
+                    <span key={i} className="kbd-key">
+                      {token}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={captureHotkey}
+                disabled={recording}
+                className="btn"
+              >
+                <Pencil strokeWidth={2} />
+                {recording ? "Press keys…" : "Change"}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="space-y-4">
-          <label className="block text-sm font-medium uppercase tracking-widest text-neutral-400">
-            {t("desktopShortcutLabel")}
-          </label>
-          <button
-            type="button"
-            onClick={handleRecordHotkey}
-            disabled={isRecordingHotkey}
-            className={cn(
-              "flex w-full items-center justify-center rounded-2xl border-2 border-dashed p-8 transition-all duration-300",
-              isRecordingHotkey
-                ? "scale-[1.02] border-blue-500 bg-blue-500/5 shadow-[0_0_30px_rgba(37,99,235,0.15)]"
-                : "cursor-pointer border-white/[0.1] bg-white/[0.02] hover:border-white/[0.2]",
-            )}
-          >
-            <div className="text-center">
-              <AnimatePresence mode="wait">
-                {isRecordingHotkey ? (
-                  <motion.div
-                    key="recording"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="text-3xl font-bold tracking-wider text-blue-500"
-                  >
-                    {t("recordingLabel")}
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="static"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="flex flex-wrap items-center justify-center gap-2"
-                  >
-                    {hotkeySettings.hotkey.split(" + ").map((key) => (
-                      <div
-                        key={key}
-                        className="flex min-w-[60px] items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.05] px-5 py-3 text-2xl font-bold text-white shadow-xl"
-                      >
-                        {key}
-                      </div>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </button>
-        </div>
-
-        <div className="grid gap-x-4 gap-y-8 md:grid-cols-2">
-          <ModeCard
-            icon={Hand}
-            label={t("holdToDictateLabel")}
-            description={t("holdToDictateDescription")}
-            active={hotkeySettings.mode === "hold"}
-            onClick={() => handleModeChange("hold")}
-          />
-          <ModeCard
-            icon={MousePointerClick}
-            label={t("tapToDictateLabel")}
-            description={t("tapToDictateDescription")}
-            active={hotkeySettings.mode === "toggle"}
-            onClick={() => handleModeChange("toggle")}
-          />
-        </div>
-      </section>
-
-      <section className="space-y-6 rounded-2xl border border-white/[0.06] bg-[#121212] p-8">
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-              <CornerDownRight className="h-5 w-5 text-blue-500" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-white">{t("autoPaste")}</h2>
-              <p className="text-sm text-neutral-500">{t("autoPasteSettingDescription")}</p>
+        <div className="s-row">
+          <div className="s-icon">
+            <Hand strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Trigger mode</div>
+            <div className="s-desc">Choose how to trigger the hotkey.</div>
+          </div>
+          <div className="s-control">
+            <div className="hero-mode" role="group" aria-label="Trigger mode">
+              <button
+                type="button"
+                className={hotkeySettings.mode === "hold" ? "active" : ""}
+                onClick={() => void setHotkeySettings({ mode: "hold" })}
+              >
+                <Hand strokeWidth={2} />
+                <span>Hold</span>
+              </button>
+              <button
+                type="button"
+                className={hotkeySettings.mode === "toggle" ? "active" : ""}
+                onClick={() => void setHotkeySettings({ mode: "toggle" })}
+              >
+                <MousePointerClick strokeWidth={2} />
+                <span>Tap</span>
+              </button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleAutoPasteToggle}
-            className={`h-6 w-12 shrink-0 rounded-full p-1 transition-all duration-300 ${
-              hotkeySettings.autoPaste
-                ? "bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.35)]"
-                : "bg-white/[0.1]"
-            }`}
-          >
-            <div
-              className={`h-4 w-4 rounded-full bg-white transition-all duration-300 ${
-                hotkeySettings.autoPaste ? "translate-x-6" : "translate-x-0"
-              }`}
+        </div>
+
+        <div className="s-row">
+          <div className="s-icon">
+            <ClipboardPaste strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Auto-paste</div>
+            <div className="s-desc">Paste the rewritten text into the focused app when dictation ends.</div>
+          </div>
+          <div className="s-control">
+            <button
+              type="button"
+              aria-pressed={hotkeySettings.autoPaste}
+              className={`toggle ${hotkeySettings.autoPaste ? "on" : ""}`}
+              onClick={() => {
+                const next = !hotkeySettings.autoPaste;
+                void setHotkeySettings({ autoPaste: next });
+                toast.info(next ? t("autoPasteEnabledToast") : t("autoPasteDisabledToast"));
+              }}
             />
-          </button>
+          </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 };
 
-const PermissionCard = ({
-  icon,
-  label,
-  description,
-  accent,
-  actionable,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  description: string;
-  accent: "blue" | "neutral";
-  actionable: boolean;
-  onClick: () => void;
-}) => {
+function PermissionAction({ granted, onGrant }: { granted: boolean; onGrant: () => void }) {
+  if (granted) {
+    return (
+      <button type="button" className="btn btn-static">
+        <Check strokeWidth={2} />
+        Enabled
+      </button>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={actionable ? onClick : undefined}
-        className={cn(
-          "rounded-2xl border p-6 text-left transition-all",
-          actionable
-          ? "border-white/[0.08] bg-[#121212] hover:border-white/[0.16] hover:bg-[#171717]"
-          : "cursor-default border-white/[0.06] bg-[#121212]",
-        )}
-    >
-      <div className="flex items-center gap-4">
-        <div
-          className={cn(
-            "rounded-xl p-3",
-            actionable
-              ? "bg-white/[0.05] text-neutral-400"
-              : accent === "blue"
-                ? "bg-blue-500/10 text-blue-400"
-                : "bg-white/[0.05] text-neutral-300",
-          )}
-        >
-          {icon}
-        </div>
-        <div className="min-w-0 space-y-1">
-          <div className="text-lg font-semibold text-white">{label}</div>
-          <p className="text-sm leading-relaxed text-neutral-500">{description}</p>
-        </div>
-      </div>
+    <button type="button" className="btn btn-ai" onClick={onGrant}>
+      <Lock strokeWidth={2} />
+      Action needed
     </button>
   );
-};
-
-const ModeCard = ({
-  icon: Icon,
-  label,
-  description,
-  active,
-  onClick,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  description: string;
-  active: boolean;
-  onClick: () => void;
-}) => (
-  <button
-    onClick={onClick}
-    className={cn(
-      "rounded-xl border p-5 text-left transition-all",
-      active
-        ? "border-white/[0.1] bg-[#171717]"
-        : "border-white/[0.04] bg-[#121212] hover:bg-[#171717]",
-    )}
-  >
-    <div className="mb-3 flex items-center gap-3">
-      <div
-        className={cn(
-          "rounded-lg p-2",
-          active ? "bg-blue-500/10 text-blue-400" : "bg-white/[0.04] text-neutral-400",
-        )}
-      >
-        <Icon className="h-4 w-4" />
-      </div>
-      <span className="text-sm font-medium text-white">{label}</span>
-    </div>
-    <p className="text-sm leading-relaxed text-neutral-500">{description}</p>
-  </button>
-);
+}

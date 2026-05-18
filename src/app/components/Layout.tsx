@@ -1,13 +1,23 @@
-import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
-import { BookText, Cpu, Globe, History, Home, Mic2, Wand2 } from "lucide-react";
+import { motion } from "motion/react";
+import { useEffect, useState } from "react";
+import {
+  BookText,
+  History as HistoryIcon,
+  Home as HomeIcon,
+  LogOut,
+  Moon,
+  Settings as SettingsIcon,
+  Sun,
+} from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { checkAccessibility, getSettings } from "../../lib/commands";
 import { useI18n } from "../../lib/i18n";
-import { type ModelsState, useAppStore } from "../../lib/store";
-import { getMicrophonePermissionState } from "../../lib/ui";
 import { DictationProvider } from "../../lib/useDictation";
 import { cn } from "../../lib/utils";
+
+type PageMeta = {
+  title: string;
+  sub: string;
+};
 
 export const Layout = () => {
   return (
@@ -20,183 +30,206 @@ export const Layout = () => {
 const LayoutInner = () => {
   const location = useLocation();
   const { t } = useI18n();
-  const { models } = useAppStore();
-  const [microphoneGranted, setMicrophoneGranted] = useState(false);
-  const [accessibilityGranted, setAccessibilityGranted] = useState(false);
-  const [missingApiKeys, setMissingApiKeys] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window === "undefined") return "dark";
+    return (localStorage.getItem("dictateai.theme") as "dark" | "light" | null) ?? "dark";
+  });
+
+  // Apply theme to <html> so token overrides cascade everywhere.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "light") {
+      root.setAttribute("data-theme", "light");
+    } else {
+      root.removeAttribute("data-theme");
+    }
+    localStorage.setItem("dictateai.theme", theme);
+  }, [theme]);
+
   const sidebarItems = [
-    { icon: Home, label: t("navHome"), path: "/" },
-    { icon: Globe, label: t("navLanguages"), path: "/languages" },
-    { icon: Cpu, label: t("navModels"), path: "/models" },
-    { icon: Wand2, label: t("navRewriteRules"), path: "/rewrite-rules" },
+    { icon: HomeIcon, label: t("navHome"), path: "/" },
+    { icon: HistoryIcon, label: t("navHistory"), path: "/history" },
     { icon: BookText, label: t("navVocabulary"), path: "/vocabulary" },
-    { icon: History, label: t("navHistory"), path: "/history" },
+    { icon: SettingsIcon, label: "Settings", path: "/settings" },
   ];
 
-  const syncStatus = useCallback(async () => {
-    const [microphoneState, accessibilityState, settingsEntries] = await Promise.all([
-      getMicrophonePermissionState().catch(() => "unknown"),
-      checkAccessibility().catch(() => false),
-      getSettings().catch(() => null as [string, string][] | null),
-    ]);
-
-    setMicrophoneGranted(microphoneState === "granted");
-    setAccessibilityGranted(accessibilityState === true);
-    if (settingsEntries) {
-      setMissingApiKeys(hasMissingApiKeys(models, new Map(settingsEntries)));
-    }
-  }, [models]);
-
-  useEffect(() => {
-    void syncStatus();
-
-    const handleStatusRefresh = () => {
-      void syncStatus();
-    };
-
-    window.addEventListener("focus", handleStatusRefresh);
-    document.addEventListener("visibilitychange", handleStatusRefresh);
-    window.addEventListener("dictateai-settings-changed", handleStatusRefresh);
-
-    return () => {
-      window.removeEventListener("focus", handleStatusRefresh);
-      document.removeEventListener("visibilitychange", handleStatusRefresh);
-      window.removeEventListener("dictateai-settings-changed", handleStatusRefresh);
-    };
-  }, [syncStatus]);
-
-  const isReady = microphoneGranted && accessibilityGranted;
-  const footerStatus = missingApiKeys ? "api" : isReady ? "ready" : "permissions";
-  const footerLabel =
-    footerStatus === "ready"
-      ? t("statusReady")
-      : footerStatus === "api"
-        ? t("statusApiKeyMissing")
-        : t("statusPermissionNeeded");
-  const footerDescription =
-    footerStatus === "ready"
-      ? t("statusReadyDesc")
-      : footerStatus === "api"
-        ? t("statusApiKeyMissingDesc")
-        : t("statusPermissionNeededDesc");
+  const pageMeta: Record<string, PageMeta> = {
+    "/": { title: t("navHome"), sub: "Press the hotkey from anywhere." },
+    "/history": { title: t("navHistory"), sub: "Every dictation, searchable." },
+    "/vocabulary": { title: t("navVocabulary"), sub: "Custom terms preserved across rewrites." },
+    "/settings": { title: "Settings", sub: "Permissions, models, languages, and rewrite rules." },
+  };
+  const currentPage = pageMeta[location.pathname] ?? pageMeta["/"];
 
   return (
-    <div className="main-shell flex h-screen bg-[#0A0A0A] text-[#E5E5E5] font-sans selection:bg-blue-500/30 selection:text-blue-200">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-white/[0.06] bg-[#0F0F0F]">
-        <div className="flex items-center gap-3 p-6">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.4)]">
-            <Mic2 className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-lg font-semibold tracking-tight">DictateAI</span>
-        </div>
+    <>
+      <div className="app-bg" aria-hidden="true" />
+      <div
+        className="relative z-[1] grid h-screen gap-3 p-3"
+        style={{ gridTemplateColumns: "232px 1fr" }}
+      >
+        {/* ============ Sidebar ============ */}
+        <aside className="panel relative flex flex-col overflow-hidden px-3 pt-3.5 pb-3">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(180deg, oklch(0.65 0.17 var(--ai-h) / 0.05), transparent 30%)",
+            }}
+          />
 
-        <nav className="flex-1 space-y-1 px-3 py-2">
-          {sidebarItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                cn(
-                  "group relative flex items-center gap-3 rounded-md px-3 py-2 transition-all duration-200",
-                  isActive
-                    ? "bg-white/[0.05] text-white"
-                    : "text-neutral-500 hover:bg-white/[0.02] hover:text-neutral-300",
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon
-                    className={cn(
-                      "h-4 w-4",
-                      isActive ? "text-blue-500" : "group-hover:text-neutral-300",
-                    )}
-                  />
-                  <span className="text-sm font-medium">{item.label}</span>
-                  {isActive ? (
-                    <motion.div
-                      layoutId="sidebar-active"
-                      className="absolute left-0 h-4 w-0.5 rounded-full bg-blue-500"
-                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                    />
-                  ) : null}
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="flex min-h-24 flex-col justify-center border-t border-white/[0.06] p-4">
-          <div className="flex items-center gap-3 px-2">
+          {/* Brand */}
+          <div className="relative flex items-center gap-2.5 px-1.5 pt-1 pb-4">
             <div
-              className={cn(
-                "h-2 w-2 rounded-full",
-                footerStatus === "ready"
-                  ? "bg-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.5)]"
-                  : "bg-neutral-500 shadow-[0_0_8px_rgba(115,115,115,0.35)]",
-              )}
-            />
-            <span className="text-xs font-medium uppercase tracking-widest text-neutral-400">
-              {footerLabel}
-            </span>
+              className="size-8 shrink-0 overflow-hidden rounded-[9px]"
+              style={{
+                boxShadow:
+                  "0 0 12px 1px rgba(42, 111, 219, 0.55), 0 0 28px 4px rgba(42, 111, 219, 0.25)",
+              }}
+            >
+              <img
+                src="/app-icon.png"
+                alt="DictateAI"
+                className="size-full object-cover"
+              />
+            </div>
+            <div>
+              <div className="text-sm font-semibold tracking-tight" style={{ color: "var(--text)" }}>
+                DictateAI
+              </div>
+              <div className="mono-label mt-px" style={{ fontSize: "9.5px" }}>
+                Voice → Text
+              </div>
+            </div>
           </div>
-          <p className="px-2 pt-2 text-[11px] leading-relaxed text-neutral-500">
-            {footerDescription}
-          </p>
-        </div>
-      </aside>
 
-      <main className="relative flex-1 overflow-y-auto bg-[#0A0A0A]">
-        <div aria-hidden="true" className="main-window-pattern" />
-        <div aria-hidden="true" className="main-window-scrim" />
-        <div aria-hidden="true" className="main-window-glow" />
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="relative z-10 min-h-full"
+          {/* Nav */}
+          <nav className="relative flex flex-col gap-px">
+            {sidebarItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === "/"}
+                className={({ isActive }) =>
+                  cn(
+                    "relative flex w-full items-center gap-2.5 rounded-md px-2 py-[7px] text-left text-[12.5px] transition-colors",
+                    isActive
+                      ? "bg-[var(--hairline)] text-[var(--text)]"
+                      : "text-[var(--text-muted)] hover:bg-[var(--hairline)] hover:text-[var(--text)]",
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    {isActive && (
+                      <motion.span
+                        layoutId="sidebar-active-bar"
+                        className="absolute top-1/2 left-[-12px] block h-4 w-[3px] -translate-y-1/2 rounded-[2px]"
+                        style={{
+                          background: "var(--ai)",
+                          boxShadow: "0 0 8px var(--ai-glow)",
+                        }}
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
+                      />
+                    )}
+                    <span className="grid size-[14px] shrink-0 place-items-center">
+                      <item.icon className="size-[14px]" strokeWidth={2} />
+                    </span>
+                    <span>{item.label}</span>
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </nav>
+
+          {/* Footer: just the user / log-out row. */}
+          <div
+            className="relative mt-auto border-t pt-3"
+            style={{ borderColor: "var(--hairline)" }}
           >
-            <div className="relative z-10 mx-auto max-w-4xl p-12">
+            <div className="flex items-center gap-2.5 px-1.5">
+              <div
+                className="grid size-[26px] shrink-0 place-items-center rounded-full text-[10px] font-semibold"
+                style={{
+                  background:
+                    "linear-gradient(135deg, oklch(0.74 0.14 295), oklch(0.82 0.14 188))",
+                  color: "var(--bg)",
+                }}
+              >
+                YL
+              </div>
+              <div>
+                <div className="text-[12px]" style={{ color: "var(--text)" }}>
+                  Yifan Liu
+                </div>
+                <button
+                  type="button"
+                  className="mono-label mt-px inline-flex items-center gap-1.5 transition-colors hover:!text-[var(--text)]"
+                  style={{ fontSize: "10px", letterSpacing: "0.06em", color: "var(--text-dim)" }}
+                >
+                  <LogOut className="size-[10px]" strokeWidth={2} />
+                  Log out
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* ============ Main ============ */}
+        <section
+          className="surface flex min-w-0 flex-col overflow-hidden"
+          style={{ background: "var(--bg-elev-1)" }}
+        >
+          <header
+            className="flex items-start gap-3 px-5 py-[14px]"
+            style={{ borderBottom: "1px solid var(--hairline)", background: "var(--bg-elev-1)" }}
+          >
+            <div>
+              <div
+                className="text-[18px] font-semibold tracking-[-0.02em]"
+                style={{ color: "var(--text)" }}
+              >
+                {currentPage.title}
+              </div>
+              <div className="mt-px text-[12px]" style={{ color: "var(--text-muted)" }}>
+                {currentPage.sub}
+              </div>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                aria-label="Toggle theme"
+                className="grid size-8 place-items-center rounded-md transition-colors hover:!text-[var(--text)]"
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--hairline)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {theme === "dark" ? (
+                  <Sun className="size-[14px]" strokeWidth={2} />
+                ) : (
+                  <Moon className="size-[14px]" strokeWidth={2} />
+                )}
+              </button>
+            </div>
+          </header>
+
+          <div className="relative flex-1 overflow-auto">
+            {/* Route changes drop the previous DOM (no exit animation) and
+             * the new page mounts with the global `.screen-fade` keyframe.
+             * Pages render their own toolbar (Settings tabs, History
+             * search, Vocabulary add-row) flush against the topbar's
+             * hairline, then a `.page-body` wrapper holds the content. */}
+            <div key={location.pathname} className="relative z-10 min-h-full screen-fade">
               <Outlet />
             </div>
-          </motion.div>
-        </AnimatePresence>
-      </main>
-
-    </div>
+          </div>
+        </section>
+      </div>
+    </>
   );
 };
 
-function hasMissingApiKeys(models: ModelsState, settings: Map<string, string>) {
-  return !hasSpeechApiKey(models, settings) || !hasRewriteApiKey(models, settings);
-}
-
-function hasSpeechApiKey(models: ModelsState, settings: Map<string, string>) {
-  switch (models.speechProvider) {
-    case "Deepgram":
-      return Boolean(settings.get("speech_deepgram_api_key")?.trim());
-    case "Google":
-      return Boolean(
-        settings.get("speech_google_api_key")?.trim()
-          && settings.get("speech_google_project_id")?.trim(),
-      );
-    case "OpenAI":
-      return Boolean(settings.get("speech_openai_api_key")?.trim());
-    case "Alibaba":
-      return Boolean(settings.get("alibaba_api_key")?.trim());
-  }
-}
-
-function hasRewriteApiKey(models: ModelsState, settings: Map<string, string>) {
-  switch (models.rewriteProvider) {
-    case "OpenAI":
-      return Boolean(settings.get("speech_openai_api_key")?.trim());
-    case "Google":
-      return Boolean(settings.get("gemini_api_key")?.trim());
-    case "Alibaba":
-      return Boolean(settings.get("alibaba_api_key")?.trim());
-  }
-}

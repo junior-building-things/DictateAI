@@ -12,7 +12,7 @@ CRITICAL RULES — follow these strictly:
 6. Use commas to represent natural pauses in the speech.
 7. Do not add any periods anywhere in the output.
 8. Use a neutral tone.
-9. If the transcription is already clean, return it unchanged.
+9. If the transcription is already clean, output the original text verbatim. Never output meta-commentary like "(no change)", "no changes needed", or "unchanged" — always output the actual text.
 10. Output ONLY the cleaned text. No explanations, no preamble, no quotes, no markdown."#;
 
 const BASE_SYSTEM_INSTRUCTION: &str = r#"You are a transcription post-processor. Your job is to lightly clean up raw speech transcriptions into written text.
@@ -37,7 +37,7 @@ pub fn system_instruction_for_tone(tone: &str) -> String {
     }
 
     format!(
-        "{BASE_SYSTEM_INSTRUCTION}\n8. {}\n9. If the transcription is already clean, return it unchanged.\n10. Output ONLY the cleaned text. No explanations, no preamble, no quotes, no markdown.",
+        "{BASE_SYSTEM_INSTRUCTION}\n8. {}\n9. If the transcription is already clean, output the original text verbatim. Never output meta-commentary like \"(no change)\" or \"unchanged\" — always output the actual text.\n10. Output ONLY the cleaned text. No explanations, no preamble, no quotes, no markdown.",
         tone_instruction(normalized)
     )
 }
