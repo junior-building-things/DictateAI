@@ -5,14 +5,6 @@ import { Dropdown } from "../../components/Dropdown";
 import { useI18n } from "../../lib/i18n";
 import { useAppStore, rewriteToneOptions, type RewriteTone } from "../../lib/store";
 
-const TONE_LABEL: Record<RewriteTone, string> = {
-  neutral: "Neutral",
-  casual: "Casual",
-  friendly: "Friendly",
-  professional: "Professional",
-  enthusiastic: "Enthusiastic",
-};
-
 /**
  * Settings → Rewrite Rules. Matches the design file's `rewrite:` panel:
  *   Group "Prompt":
@@ -27,18 +19,27 @@ export const RewriteRules = () => {
   const { t } = useI18n();
   const { rewriteRules, setRewriteRules } = useAppStore();
   const [customDraft, setCustomDraft] = useState(rewriteRules.customPrompt);
-  const hasCustomText = customDraft.trim().length > 0;
+
+  const getToneLabel = (tone: RewriteTone): string => {
+    const map: Record<RewriteTone, string> = {
+      neutral: t("toneNeutral"),
+      casual: t("toneCasual"),
+      friendly: t("toneFriendly"),
+      professional: t("toneProfessional"),
+      enthusiastic: t("toneEnthusiastic"),
+    };
+    return map[tone] || tone;
+  };
 
   const onTone = (tone: RewriteTone) => {
     void setRewriteRules({ tone });
-    toast.info(t("rewriteToneUpdatedToast", { tone: TONE_LABEL[tone] }));
+    toast.info(t("rewriteToneUpdatedToast", { tone: getToneLabel(tone) }));
   };
 
   const onToggleCustom = () => {
-    if (!hasCustomText) {
-      toast.error(t("addCustomPromptFirst"));
-      return;
-    }
+    // The toggle is a free flip — empty prompts are allowed; the rewrite
+    // pipeline already treats a blank `customPrompt` as a no-op, so there's
+    // no hazard in letting the toggle precede the text.
     const next = !rewriteRules.useCustomPrompt;
     void setRewriteRules({ useCustomPrompt: next });
     toast.info(next ? t("customPromptEnabledToast") : t("customPromptDisabledToast"));
@@ -68,7 +69,7 @@ export const RewriteRules = () => {
       <div className="s-group">
         <div className="s-group-head">
           <div className="title-wrap">
-            <span className="title">Prompt</span>
+            <span className="title">{t("promptTitle")}</span>
           </div>
           <div className="bar" />
         </div>
@@ -78,15 +79,15 @@ export const RewriteRules = () => {
             <Palette strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Rewrite tone</div>
-            <div className="s-desc">Define the general tone of the rewrite.</div>
+            <div className="s-label">{t("rewriteToneTitle")}</div>
+            <div className="s-desc">{t("rewriteToneDescription")}</div>
           </div>
           <div className="s-control">
             <Dropdown<RewriteTone>
               value={rewriteRules.tone}
               options={rewriteToneOptions.map((tone) => ({
                 value: tone,
-                label: TONE_LABEL[tone],
+                label: getToneLabel(tone),
               }))}
               onChange={(value) => onTone(value)}
             />
@@ -99,8 +100,8 @@ export const RewriteRules = () => {
               <Wand2 strokeWidth={2} />
             </div>
             <div className="s-body">
-              <div className="s-label">Custom prompt</div>
-              <div className="s-desc">Add specific rewrite instructions.</div>
+              <div className="s-label">{t("customPromptLabel")}</div>
+              <div className="s-desc">{t("useCustomPromptDescription")}</div>
             </div>
             <div className="s-control">
               <button
@@ -111,13 +112,15 @@ export const RewriteRules = () => {
               />
             </div>
           </div>
+          {/* Textarea is always editable so the user can draft a prompt
+           * before turning the toggle on. The toggle gates whether the
+           * prompt is actually applied at rewrite-time, nothing more. */}
           <textarea
             className="s-textarea"
             value={customDraft}
             onChange={(event) => setCustomDraft(event.target.value)}
             onBlur={onCustomBlur}
-            disabled={!rewriteRules.useCustomPrompt}
-            placeholder="e.g. 'Match my casual voice in Slack. Use sentence case.'"
+            placeholder={t("customPromptInputPlaceholder")}
             rows={4}
           />
         </div>
@@ -127,7 +130,7 @@ export const RewriteRules = () => {
       <div className="s-group">
         <div className="s-group-head">
           <div className="title-wrap">
-            <span className="title">Context</span>
+            <span className="title">{t("contextTitle")}</span>
           </div>
           <div className="bar" />
         </div>
@@ -137,8 +140,8 @@ export const RewriteRules = () => {
             <BookOpen strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Use vocabulary</div>
-            <div className="s-desc">Reference your vocabulary during rewrite.</div>
+            <div className="s-label">{t("useVocabularyTitle")}</div>
+            <div className="s-desc">{t("useVocabularyDescription")}</div>
           </div>
           <div className="s-control">
             <button
@@ -155,8 +158,8 @@ export const RewriteRules = () => {
             <Star strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Use favorites</div>
-            <div className="s-desc">Reference your starred history during rewrite.</div>
+            <div className="s-label">{t("useFavoritesTitle")}</div>
+            <div className="s-desc">{t("useFavoritesDescription")}</div>
           </div>
           <div className="s-control">
             <button

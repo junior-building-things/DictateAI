@@ -38,6 +38,11 @@ fn build_apple_fm_helper() {
     let bundle_dir = PathBuf::from(&manifest_dir).join("binaries");
     let bundle_path = bundle_dir.join("apple-fm-helper");
 
+    // Re-run the build (and re-sign the helper) when the signing identity
+    // changes — otherwise switching from ad-hoc dev builds to a notarized
+    // release would leave a stale unsigned helper from a prior cargo cache.
+    println!("cargo:rerun-if-env-changed=APPLE_SIGNING_IDENTITY");
+
     // Ensure the directory exists so the Tauri bundler always finds the
     // resource entry it expects, even if compilation fails below.
     let _ = fs::create_dir_all(&bundle_dir);
@@ -45,6 +50,7 @@ fn build_apple_fm_helper() {
     if !source.exists() {
         println!("cargo:warning=apple_fm_helper.swift missing; bundling stub");
         write_stub(&bundle_path);
+        sign_apple_fm_helper(&bundle_path);
         return;
     }
 
@@ -90,6 +96,59 @@ fn build_apple_fm_helper() {
                 e
             );
             write_stub(&bundle_path);
+        }
+    }
+
+    // Always (re-)sign the helper at the end of this function, regardless
+    // of which branch above produced it. Notarization rejects any embedded
+    // Mach-O without a Developer ID signature + hardened runtime + secure
+    // timestamp. No-op when `APPLE_SIGNING_IDENTITY` isn't set (dev builds).
+    sign_apple_fm_helper(&bundle_path);
+}
+
+/// Sign the apple-fm-helper executable with the configured Developer ID
+/// identity, hardened runtime, and a secure timestamp — the three boxes
+/// Apple's notary service checks for every Mach-O inside the bundle.
+/// No-op when `APPLE_SIGNING_IDENTITY` isn't set (development builds).
+#[cfg(target_os = "macos")]
+fn sign_apple_fm_helper(path: &std::path::Path) {
+    use std::process::Command;
+
+    let Ok(identity) = std::env::var("APPLE_SIGNING_IDENTITY") else {
+        return;
+    };
+    if identity.trim().is_empty() || identity.trim() == "-" {
+        return;
+    }
+
+    let result = Command::new("codesign")
+        .args([
+            "--force",
+            "--options",
+            "runtime", // hardened runtime
+            "--timestamp", // secure timestamp from Apple's TSA
+            "--sign",
+            &identity,
+        ])
+        .arg(path)
+        .output();
+
+    match result {
+        Ok(out) if out.status.success() => {
+            println!(
+                "cargo:warning=Signed apple-fm-helper with identity \"{}\"",
+                identity
+            );
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            println!(
+                "cargo:warning=codesign of apple-fm-helper failed (notarization will reject): {}",
+                stderr.trim()
+            );
+        }
+        Err(e) => {
+            println!("cargo:warning=codesign not available: {}", e);
         }
     }
 }

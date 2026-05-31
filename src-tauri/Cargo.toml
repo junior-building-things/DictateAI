@@ -52,7 +52,11 @@ sherpa-rs = { version = "0.6", features = ["download-binaries", "static"] }
 # render over native fullscreen apps (FullScreenAuxiliary requires NSPanel).
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"
+core-foundation = "0.10"
 objc = "0.2"
+# Needed by `hotkey::right_option` to pass Rust closures as Objective-C
+# blocks to `NSEvent.addGlobalMonitorForEventsMatchingMask:handler:`.
+block = "0.1"
 
 # Local LLM rewrite via llama.cpp with Metal acceleration. macOS-only for now;
 # extend to other targets when we add cross-platform builds.

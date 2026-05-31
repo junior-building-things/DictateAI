@@ -53,8 +53,8 @@ export const Languages = () => {
             <Monitor strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">App language</div>
-            <div className="s-desc">Controls the UI across the app and overlay.</div>
+            <div className="s-label">{t("interfaceLanguage")}</div>
+            <div className="s-desc">{t("appLanguageDesc")}</div>
           </div>
           <div className="s-control">
             <Dropdown
@@ -74,8 +74,8 @@ export const Languages = () => {
             <Speech strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Spoken language</div>
-            <div className="s-desc">The language you speak when dictating.</div>
+            <div className="s-label">{t("spokenLanguage")}</div>
+            <div className="s-desc">{t("spokenLanguageDesc")}</div>
           </div>
           <div className="s-control">
             <Dropdown
@@ -95,8 +95,8 @@ export const Languages = () => {
             <LanguagesIcon strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Target language</div>
-            <div className="s-desc">The language DictateAI returns.</div>
+            <div className="s-label">{t("translationLanguage")}</div>
+            <div className="s-desc">{t("targetLanguageDesc")}</div>
           </div>
           <div className="s-control">
             <Dropdown

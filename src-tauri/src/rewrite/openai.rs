@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
+use crate::rewrite::RewriteOutcome;
 
 #[derive(Serialize)]
 struct ChatCompletionRequest {
@@ -18,6 +19,8 @@ struct ChatMessage {
 #[derive(Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<ChatChoice>,
+    #[serde(default)]
+    usage: Option<TokenUsage>,
 }
 
 #[derive(Deserialize)]
@@ -30,13 +33,25 @@ struct ChatChoiceMessage {
     content: String,
 }
 
+/// Shared shape across OpenAI-compatible chat completion APIs (OpenAI proper,
+/// Groq, Alibaba DashScope) — all surface `usage.prompt_tokens` +
+/// `usage.completion_tokens` on success. `#[serde(default)]` on each field
+/// guards against responses that omit them in edge cases.
+#[derive(Deserialize, Default)]
+struct TokenUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
+}
+
 pub async fn rewrite(
     client: &reqwest::Client,
     api_key: &str,
     model: &str,
     system_prompt: &str,
     user_message: &str,
-) -> AppResult<String> {
+) -> AppResult<RewriteOutcome> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config(
             "OpenAI rewrite requires speech_openai_api_key in settings.".into(),
@@ -83,12 +98,17 @@ pub async fn rewrite(
         AppError::Rewrite(format!("Failed to parse OpenAI response: {}", error))
     })?;
 
-    let content = parsed
+    let usage = parsed.usage.unwrap_or_default();
+    let text = parsed
         .choices
         .into_iter()
         .next()
         .map(|choice| choice.message.content.trim().to_string())
         .unwrap_or_default();
 
-    Ok(content)
+    Ok(RewriteOutcome {
+        text,
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+    })
 }

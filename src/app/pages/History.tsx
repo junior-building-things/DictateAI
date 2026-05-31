@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Globe, Pencil, Search, Star, Trash2, X } from "lucide-react";
+import { Check, Pencil, Search, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
-import { useAppStore, type HistoryItem } from "../../lib/store";
+import { useAppStore } from "../../lib/store";
+import { learnNewVocabTerms } from "../../lib/vocabLearn";
 
 export const History = () => {
   const { t } = useI18n();
-  const { history, toggleFavorite, deleteHistoryItem, updateHistoryRewritten } = useAppStore();
+  const {
+    history,
+    toggleFavorite,
+    deleteHistoryItem,
+    updateHistoryRewritten,
+    hotkeySettings,
+  } = useAppStore();
   const [search, setSearch] = useState("");
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -25,9 +32,6 @@ export const History = () => {
     });
   }, [history, search, showFavoritesOnly]);
 
-  // Group by date string for sticky-header table groups.
-  const grouped = useMemo(() => groupByDate(filteredItems), [filteredItems]);
-
   useEffect(() => {
     if (search) searchInputRef.current?.focus();
   }, [search]);
@@ -39,8 +43,20 @@ export const History = () => {
 
   const saveEdit = () => {
     if (editingId !== null && editValue.trim()) {
-      void updateHistoryRewritten(editingId, editValue.trim());
+      const id = editingId;
+      const next = editValue.trim();
+      // Original rewritten text — snapshot before the optimistic update.
+      const original = history.find((entry) => entry.id === id)?.rewritten ?? "";
+      void updateHistoryRewritten(id, next);
       toast.info(t("rewriteUpdated"));
+      // After the persist call kicks off, diff old → new and offer to learn
+      // any newly-introduced proper-noun-shaped words as vocabulary terms.
+      // Gated on the Auto-add vocabulary preference (Settings → General).
+      // Async + best-effort; failures (already-in-vocab UNIQUE collisions,
+      // backend errors) are swallowed so we never block the user's edit flow.
+      if (hotkeySettings.autoAddVocabulary) {
+        learnNewVocabTerms(original, next);
+      }
     }
     setEditingId(null);
     setEditValue("");
@@ -87,58 +103,64 @@ export const History = () => {
         <button
           type="button"
           onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11.5px]"
-          style={{
-            background: showFavoritesOnly ? "var(--bg-elev-3)" : "var(--bg-elev-2)",
-            borderColor: showFavoritesOnly ? "var(--hairline-strong)" : "var(--hairline)",
-            color: showFavoritesOnly ? "var(--amber)" : "var(--text-muted)",
-          }}
+          className="btn"
+          aria-label={showFavoritesOnly ? t("showAllDictationsLabel") : t("showOnlyFavoritesLabel")}
+          aria-pressed={showFavoritesOnly}
+          title={showFavoritesOnly ? t("showAllLabel") : t("showOnlyFavoritesLabel")}
+          style={
+            showFavoritesOnly
+              ? {
+                  background: "var(--bg-elev-3)",
+                  borderColor: "var(--hairline-strong)",
+                  color: "var(--amber)",
+                  // Square button when icon-only — `.btn`'s 12px horizontal
+                  // padding looks lopsided without text alongside. Also
+                  // explicitly center the single child since `.btn` is
+                  // `inline-flex` and defaults to flex-start, which would
+                  // glue the star to the left edge of the 32px square.
+                  padding: 0,
+                  width: 32,
+                  justifyContent: "center",
+                }
+              : { padding: 0, width: 32, justifyContent: "center" }
+          }
         >
           <Star
-            size={12}
             strokeWidth={2}
             fill={showFavoritesOnly ? "currentColor" : "none"}
           />
-          Favorites
         </button>
         <div style={{ flex: 1 }} />
-        <span className="mono-label" style={{ fontSize: "10.5px" }}>
-          {filteredItems.length} {filteredItems.length === 1 ? "entry" : "entries"}
-        </span>
       </div>
 
-      <div className="page-body">
       {filteredItems.length === 0 ? (
-        <div className="empty">
-          <p>{t("noHistoryItemsFound")}</p>
+        <div className="page-scroll">
+          <div className="page-body">
+            <div className="empty">
+              <p>{t("noHistoryItemsFound")}</p>
+            </div>
+          </div>
         </div>
       ) : (
         <>
-          {/* Table header */}
-          <div className="thead t-history">
-            <div>Time</div>
-            <div>Spoken</div>
-            <div>Rewritten</div>
-            <div style={{ textAlign: "right" }}>Words</div>
-            <div style={{ textAlign: "right" }}>Actions</div>
+          {/* Table header lives OUTSIDE `.page-scroll` so the scrollbar
+           * sits flush below it and the bottom hairline extends fully. */}
+          <div className="page-body" style={{ paddingTop: 0, paddingBottom: 0 }}>
+            <div className="thead t-history">
+              <div>{t("spokenLabel")}</div>
+              <div>{t("rewrittenLabel")}</div>
+              <div style={{ textAlign: "right" }}>{t("actionsLabel")}</div>
+            </div>
           </div>
 
-          {/* Date-grouped rows */}
-          {grouped.map(({ date, items }) => (
-            <div key={date}>
-              <div className="tgroup-header">
-                <span className="tgroup-pill">
-                  <Globe size={10} strokeWidth={2} />
-                  {date}
-                </span>
-                <span className="tgroup-count">{items.length}</span>
-                <span className="tgroup-bar" />
-              </div>
-              {items.map((item) => {
+          <div className="page-scroll">
+            <div className="page-body" style={{ paddingTop: 0 }}>
+              {/* Flat row list — no date grouping. `filteredItems` is already
+               * ordered newest-first by the store, so chronology reads top-down. */}
+              {filteredItems.map((item) => {
                 const isEditing = editingId === item.id;
                 return (
                   <div key={item.id} className="trow t-history">
-                    <div className="cell-time">{item.time}</div>
                     <div className="cell-spoken">{item.original}</div>
                     <div className="cell-rewritten">
                       {isEditing ? (
@@ -167,9 +189,6 @@ export const History = () => {
                         item.rewritten
                       )}
                     </div>
-                    <div className="cell-words" style={{ textAlign: "right" }}>
-                      {wordCount(item.rewritten || item.original)}w
-                    </div>
                     <div className="cell-actions">
                       {isEditing ? (
                         <>
@@ -178,7 +197,7 @@ export const History = () => {
                             className="grid size-[26px] place-items-center rounded-md"
                             style={{ color: "var(--ai)" }}
                             onClick={saveEdit}
-                            title="Save"
+                            title={t("save")}
                           >
                             <Check size={13} strokeWidth={2} />
                           </button>
@@ -187,7 +206,7 @@ export const History = () => {
                             className="grid size-[26px] place-items-center rounded-md"
                             style={{ color: "var(--text-dim)" }}
                             onClick={cancelEdit}
-                            title="Cancel"
+                            title={t("cancel")}
                           >
                             <X size={13} strokeWidth={2} />
                           </button>
@@ -205,7 +224,7 @@ export const History = () => {
                                   : t("dictationAddedToFavorites"),
                               );
                             }}
-                            title={item.favorited ? "Unstar" : "Star"}
+                            title={item.favorited ? t("unstarLabel") : t("starLabel")}
                           >
                             <Star
                               size={13}
@@ -218,7 +237,7 @@ export const History = () => {
                             className="grid size-[26px] place-items-center rounded-md"
                             style={{ color: "var(--text-dim)" }}
                             onClick={() => startEditing(item.id, item.rewritten)}
-                            title="Edit"
+                            title={t("edit")}
                           >
                             <Pencil size={13} strokeWidth={2} />
                           </button>
@@ -230,7 +249,7 @@ export const History = () => {
                               void deleteHistoryItem(item.id);
                               toast.info(t("deletedFromHistory"));
                             }}
-                            title="Delete"
+                            title={t("delete")}
                           >
                             <Trash2 size={13} strokeWidth={2} />
                           </button>
@@ -241,24 +260,9 @@ export const History = () => {
                 );
               })}
             </div>
-          ))}
+          </div>
         </>
       )}
-      </div>
     </>
   );
 };
-
-function wordCount(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function groupByDate(items: HistoryItem[]) {
-  const groups = new Map<string, HistoryItem[]>();
-  for (const item of items) {
-    const key = item.date || "Earlier";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(item);
-  }
-  return Array.from(groups.entries()).map(([date, items]) => ({ date, items }));
-}

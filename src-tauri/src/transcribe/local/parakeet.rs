@@ -86,7 +86,31 @@ impl ParakeetEngine {
     }
 
     /// Transcribe a complete 16 kHz mono utterance.
+    ///
+    /// Pre-flight validation: sherpa-onnx throws C++ exceptions when fed
+    /// degenerate buffers (empty, too short, or all-NaN), and those
+    /// exceptions cross the FFI boundary as `__rust_foreign_exception` —
+    /// uncatchable by `std::panic::catch_unwind`, so they abort() the whole
+    /// process. We catch the common degenerate cases here and return an
+    /// empty string so the pipeline can short-circuit on its own logic
+    /// (`raw_text.is_empty() → "Empty transcription, skipping"`) instead.
     pub fn transcribe(&self, samples: &[f32]) -> AppResult<String> {
+        // 200 ms at 16 kHz. Shorter buffers don't contain enough acoustic
+        // context for the transducer and tend to crash sherpa internally.
+        const MIN_SAMPLES: usize = (SAMPLE_RATE as usize) / 5;
+        if samples.len() < MIN_SAMPLES {
+            log::warn!(
+                "Parakeet input too short ({} samples < {} minimum); skipping inference",
+                samples.len(),
+                MIN_SAMPLES
+            );
+            return Ok(String::new());
+        }
+        if samples.iter().any(|s| !s.is_finite()) {
+            log::warn!("Parakeet input contains NaN/Inf samples; skipping inference");
+            return Ok(String::new());
+        }
+
         let mut rec = self.inner.lock().map_err(|_| {
             AppError::Config("Parakeet recognizer mutex poisoned".into())
         })?;

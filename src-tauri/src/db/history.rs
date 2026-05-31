@@ -12,6 +12,13 @@ pub struct HistoryEntry {
     pub duration_ms: i64,
     pub created_at: String,
     pub favorited: bool,
+    /// Combined input + output rewrite-model tokens reported by the API,
+    /// or 0 for local / Apple FM rewrites where there's no notion of tokens.
+    pub tokens: i64,
+    /// Total USD spent on this dictation: speech-phase per-minute charge
+    /// plus rewrite-phase per-token charge. 0.0 for fully-local pipelines.
+    #[serde(rename = "cost")]
+    pub cost_usd: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -26,10 +33,13 @@ pub fn insert_entry(
     rewritten: &str,
     model_used: &str,
     duration_ms: i64,
+    tokens: i64,
+    cost_usd: f64,
 ) -> AppResult<i64> {
     conn.execute(
-        "INSERT INTO transcription_history (raw_text, rewritten, model_used, duration_ms) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![raw_text, rewritten, model_used, duration_ms],
+        "INSERT INTO transcription_history (raw_text, rewritten, model_used, duration_ms, tokens, cost_usd)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![raw_text, rewritten, model_used, duration_ms, tokens, cost_usd],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -45,7 +55,8 @@ pub fn get_page(
 
     let offset = page * per_page;
     let mut stmt = conn.prepare(
-        "SELECT id, raw_text, rewritten, model_used, duration_ms, created_at, favorited
+        "SELECT id, raw_text, rewritten, model_used, duration_ms, created_at, favorited,
+                tokens, cost_usd
          FROM transcription_history
          ORDER BY created_at DESC
          LIMIT ?1 OFFSET ?2",
@@ -61,6 +72,8 @@ pub fn get_page(
                 duration_ms: row.get(4)?,
                 created_at: row.get(5)?,
                 favorited: row.get::<_, i64>(6)? != 0,
+                tokens: row.get(7)?,
+                cost_usd: row.get(8)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -119,4 +132,20 @@ pub fn get_favorite_examples(
 pub fn clear_all(conn: &Connection) -> AppResult<()> {
     conn.execute("DELETE FROM transcription_history", [])?;
     Ok(())
+}
+
+/// Auto-deletion sweep: drop history rows older than `days` days, *unless*
+/// they're starred (`favorited = 1`). Returns the number of rows deleted
+/// so the caller can log it. SQLite handles the date math via the modifier
+/// arithmetic in `datetime(...)`, which compares lexicographically against
+/// the ISO-8601 `created_at` values we store.
+pub fn prune_unstarred_older_than(conn: &Connection, days: u32) -> AppResult<usize> {
+    let modifier = format!("-{} days", days);
+    let deleted = conn.execute(
+        "DELETE FROM transcription_history
+         WHERE favorited = 0
+           AND created_at < datetime('now', ?1)",
+        rusqlite::params![modifier],
+    )?;
+    Ok(deleted)
 }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
+use crate::rewrite::RewriteOutcome;
 
 const GEMINI_API_URL_PREFIX: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -45,6 +46,21 @@ struct ThinkingConfig {
 struct GeminiResponse {
     candidates: Option<Vec<Candidate>>,
     error: Option<GeminiError>,
+    /// Per the Gemini docs, present on every successful generateContent
+    /// response. Optional here to handle error envelopes that omit it.
+    #[serde(rename = "usageMetadata", default)]
+    usage_metadata: Option<UsageMetadata>,
+}
+
+/// Gemini's token accounting uses different field names from the
+/// OpenAI-compatible chat APIs. `promptTokenCount` covers everything we
+/// sent (system + user); `candidatesTokenCount` is the model's output.
+#[derive(Deserialize, Default)]
+struct UsageMetadata {
+    #[serde(rename = "promptTokenCount", default)]
+    prompt_token_count: u32,
+    #[serde(rename = "candidatesTokenCount", default)]
+    candidates_token_count: u32,
 }
 
 #[derive(Deserialize)]
@@ -73,7 +89,7 @@ pub async fn rewrite(
     model: &str,
     system_prompt: &str,
     user_message: &str,
-) -> AppResult<String> {
+) -> AppResult<RewriteOutcome> {
     if api_key.is_empty() {
         return Err(AppError::Config(
             "Gemini API key not configured. Please set it in Settings.".into(),
@@ -82,8 +98,16 @@ pub async fn rewrite(
 
     let (api_model, thinking_config) = match model {
         "gemini-2.5-flash-lite" => ("gemini-2.5-flash-lite", None),
+        "gemini-3.1-flash-lite" => (
+            "gemini-3.1-flash-lite",
+            Some(ThinkingConfig {
+                thinking_level: "minimal",
+            }),
+        ),
+        // Legacy: users may still have the pre-rename setting string.
+        // Route to the same model under the new name.
         "gemini-3.1-flash-lite-preview" => (
-            "gemini-3.1-flash-lite-preview",
+            "gemini-3.1-flash-lite",
             Some(ThinkingConfig {
                 thinking_level: "minimal",
             }),
@@ -142,6 +166,7 @@ pub async fn rewrite(
         )));
     }
 
+    let usage = gemini_response.usage_metadata.unwrap_or_default();
     let text = gemini_response
         .candidates
         .and_then(|c| c.into_iter().next())
@@ -150,8 +175,17 @@ pub async fn rewrite(
         .ok_or_else(|| AppError::Rewrite("Empty response from Gemini".into()))?;
 
     let text = text.trim().to_string();
-    log::info!("Gemini returned {} chars", text.chars().count());
-    Ok(text)
+    log::info!(
+        "Gemini returned {} chars (prompt={}, output={})",
+        text.chars().count(),
+        usage.prompt_token_count,
+        usage.candidates_token_count,
+    );
+    Ok(RewriteOutcome {
+        text,
+        prompt_tokens: usage.prompt_token_count,
+        completion_tokens: usage.candidates_token_count,
+    })
 }
 
 pub async fn validate_api_key(

@@ -82,6 +82,9 @@ export interface HotkeyState {
   hotkey: string;
   mode: HotkeyMode;
   autoPaste: boolean;
+  /** When true, editing a dictation in History pops a toast offering to
+   * add any new proper-noun-shaped word to the vocabulary. Off → silent. */
+  autoAddVocabulary: boolean;
 }
 
 export interface UpdateState {
@@ -127,6 +130,7 @@ const defaultHotkeySettings: HotkeyState = {
   hotkey: "⌥ + Space",
   mode: "hold",
   autoPaste: true,
+  autoAddVocabulary: true,
 };
 
 const defaultUpdateState: UpdateState = {
@@ -469,6 +473,11 @@ function deriveHotkeyState(settings: Map<string, string>): HotkeyState {
       "auto_paste",
       readBooleanSetting(settings, "auto_copy", defaultHotkeySettings.autoPaste),
     ),
+    autoAddVocabulary: readBooleanSetting(
+      settings,
+      "auto_add_vocabulary",
+      defaultHotkeySettings.autoAddVocabulary,
+    ),
   };
 }
 
@@ -515,6 +524,7 @@ async function persistHotkeySettings(
       saveSetting("hotkey_mode", next.mode),
       saveSetting("auto_paste", String(next.autoPaste)),
       saveSetting("auto_copy", "false"),
+      saveSetting("auto_add_vocabulary", String(next.autoAddVocabulary)),
     ]);
   } catch (error) {
     setState(previous);
@@ -588,6 +598,8 @@ function mapHistoryEntry(entry: HistoryEntry): HistoryItem {
     original: entry.raw_text,
     rewritten: entry.rewritten,
     favorited: entry.favorited,
+    tokens: entry.tokens,
+    cost: entry.cost,
   };
 }
 

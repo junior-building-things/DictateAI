@@ -5,8 +5,11 @@ use crate::db::{history, settings, vocabulary};
 use crate::hotkey::handler::HotkeyState;
 use crate::processing_mode;
 use crate::rewrite::alibaba;
+#[cfg(target_os = "macos")]
+use crate::rewrite::apple_fm;
 use crate::rewrite::gemini;
 use crate::rewrite::groq;
+use crate::rewrite::openai as openai_rewrite;
 use crate::rewrite::prompt;
 use crate::state::{AppState, STATE_IDLE};
 use crate::transcribe::api;
@@ -37,13 +40,36 @@ pub fn save_setting(state: State<AppState>, key: String, value: String) -> Resul
 
 #[tauri::command]
 pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> Result<(), String> {
+    // Always tear down whichever path is currently active before swapping —
+    // otherwise stale registrations stick around and fight the new one.
+    let _ = app.global_shortcut().unregister_all();
+    #[cfg(target_os = "macos")]
+    {
+        app.state::<crate::hotkey::right_option::RightOptionMonitor>()
+            .stop();
+    }
+
+    // Special sentinel: bare right-Option — goes through the NSEvent
+    // monitor, not the global-shortcut plugin (which rejects modifier-only
+    // bindings on macOS).
+    if hotkey.eq_ignore_ascii_case(crate::RIGHT_OPTION_SENTINEL) {
+        #[cfg(target_os = "macos")]
+        {
+            app.state::<crate::hotkey::right_option::RightOptionMonitor>()
+                .start(app.clone());
+            let db = state.db.lock().unwrap();
+            return settings::set(&db, "hotkey", &hotkey).map_err(|e| e.to_string());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err("Right Option hotkey is macOS-only.".into());
+        }
+    }
+
     let shortcut: Shortcut = hotkey
         .parse()
         .map_err(|e| format!("Invalid hotkey '{}': {}", hotkey, e))?;
 
-    app.global_shortcut()
-        .unregister_all()
-        .map_err(|e| format!("Failed to unregister existing hotkeys: {}", e))?;
     app.global_shortcut()
         .register(shortcut)
         .map_err(|e| format!("Failed to register new hotkey: {}", e))?;
@@ -396,12 +422,24 @@ pub fn get_app_state(state: State<AppState>) -> String {
     }
 }
 
+/// Snapshot of whether the currently-selected speech + rewrite providers
+/// are configured (API keys present, local models downloaded, etc.). The
+/// Dashboard uses this to decide between "Tap/Hold ⌘A to dictate." and
+/// "Configure speech model to start dictating." headlines.
+#[tauri::command]
+pub fn processing_mode_status(
+    app: AppHandle,
+    state: State<AppState>,
+) -> processing_mode::ProcessingModeStatus {
+    processing_mode::status(&app, &state)
+}
+
 #[tauri::command]
 pub fn cancel_processing(app: AppHandle, state: State<AppState>) {
     state.cancel_current_run();
     state.set_state(STATE_IDLE);
     let _ = app.emit("state-changed", "idle");
-    // Clean up any "Listening..." placeholder left in the focused field.
+    // Clean up any 🎙️ / ✏️ placeholder left in the focused field.
     if let Some(len) = state.pending_placeholder.lock().unwrap().take() {
         if let Err(e) = crate::paste::simulate::delete_placeholder(len) {
             log::warn!("Could not delete recording placeholder: {}", e);
@@ -448,9 +486,7 @@ pub fn stop_manual_recording(
     if let Some(audio_data) = crate::hotkey::handler::on_released(&app, &hotkey_state, &state) {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = crate::pipeline::run(app_clone, audio_data).await {
-                log::error!("Pipeline failed: {}", e);
-            }
+            crate::hotkey::handler::finalize_recording(app_clone, audio_data).await;
         });
     }
 
@@ -477,4 +513,162 @@ pub fn prompt_microphone_permission() {
 #[tauri::command]
 pub fn prompt_accessibility_permission() {
     crate::paste::simulate::prompt_accessibility_permission()
+}
+
+// --- Vocabulary helpers ---
+
+/// Show the floating "Add 'term' to vocabulary?" overlay (the same
+/// NSPanel-backed pill that used to host "Listening…"). Non-activating
+/// — the user can keep typing in whatever app they're focused on while
+/// this is visible.
+///
+/// Skips the prompt entirely if the term is already in the vocabulary
+/// (case-insensitive). The edit-monitor's proper-noun heuristic doesn't
+/// dedupe against existing vocab on its own, so without this check the
+/// user would see "Add CTR to vocabulary?" every time they correct CTR
+/// in a dictation — even though they already accepted it yesterday.
+#[tauri::command]
+pub fn show_vocab_prompt(app: AppHandle, state: State<AppState>, term: String) {
+    log::info!("show_vocab_prompt: invoked for term {:?}", term);
+    {
+        let conn = state.db.lock().unwrap();
+        match vocabulary::term_exists(&conn, &term) {
+            Ok(true) => {
+                log::info!(
+                    "show_vocab_prompt: term {:?} already in vocabulary, skipping prompt",
+                    term
+                );
+                return;
+            }
+            Ok(false) => {}
+            Err(e) => log::warn!(
+                "show_vocab_prompt: term_exists check failed (will prompt anyway): {}",
+                e
+            ),
+        }
+    }
+    crate::overlay::show_vocab(&app, &term);
+}
+
+/// Hide the overlay. Called by the overlay's React tree when the user
+/// clicks Add (after the save completes) or dismiss.
+#[tauri::command]
+pub fn hide_vocab_prompt(app: AppHandle) {
+    crate::overlay::hide(&app);
+}
+
+/// Read-and-clear the pending vocab term. Called by the overlay's
+/// React tree on mount as a robust alternative to the event listener
+/// — see `overlay::PendingVocabTerm` for why this exists.
+#[tauri::command]
+pub fn take_pending_vocab_term(
+    state: tauri::State<crate::overlay::PendingVocabTerm>,
+) -> Option<String> {
+    let result = state.0.lock().unwrap().take();
+    // Only log when we actually return a term — the overlay polls
+    // this command 3× per second, so logging on every poll would
+    // flood the log with `returned "(none)"` lines.
+    if let Some(ref term) = result {
+        log::info!("take_pending_vocab_term: returned {:?}", term);
+    }
+    result
+}
+
+/// DIAGNOSTIC: called from `main.tsx` the moment a webview loads and
+/// from the overlay React tree on key state transitions. Helped us
+/// diagnose the long-running "pill never paints" bug by letting us see
+/// the frontend's execution state in the Rust log. Kept around because
+/// it's cheap and useful for future "is the overlay alive?" questions.
+#[tauri::command]
+pub fn frontend_ping(label: String) {
+    log::info!("frontend_ping: label={}", label);
+}
+
+/// Ask the user's configured rewrite model to generate a simple ASCII-letter
+/// phonetic pronunciation for a single term. Used by the History tab's
+/// "learn from corrections" flow: when the user edits a misheard word back
+/// to the correct form, the frontend prompts to add the new term to the
+/// vocabulary and calls this command to fill in the Phonetic field so the
+/// user doesn't have to type it.
+///
+/// Reuses whichever rewrite provider the user already has configured.
+/// Errors propagate as strings — the caller falls back to a null phonetic
+/// if generation fails (e.g., no API key for the selected provider).
+#[tauri::command]
+pub async fn generate_phonetic(
+    state: State<'_, AppState>,
+    term: String,
+) -> Result<String, String> {
+    let term = term.trim().to_string();
+    if term.is_empty() {
+        return Err("Empty term".into());
+    }
+
+    // Snapshot everything we need out of the DB before the await — holding
+    // the MutexGuard across .await would make the future non-Send and
+    // wouldn't satisfy tauri's command runtime.
+    let (
+        provider,
+        model,
+        openai_key,
+        gemini_key,
+        groq_key,
+        alibaba_key,
+        alibaba_base,
+    ) = {
+        let db = state.db.lock().unwrap();
+        (
+            settings::get(&db, "rewrite_provider").unwrap_or_default(),
+            settings::get(&db, "rewrite_model").unwrap_or_default(),
+            settings::get(&db, "speech_openai_api_key").unwrap_or_default(),
+            settings::get(&db, "gemini_api_key").unwrap_or_default(),
+            settings::get(&db, "groq_api_key").unwrap_or_default(),
+            settings::get(&db, "alibaba_api_key").unwrap_or_default(),
+            settings::get(&db, "alibaba_base_url").unwrap_or_else(|_| {
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1".into()
+            }),
+        )
+    };
+    let http = state.http_client.clone();
+
+    let system = "You generate simple English-letter phonetic spellings for proper nouns and domain terms. \
+Given a single word or token, reply with ONLY the phonetic, hyphenated by syllable, no quotes, no explanation. \
+Examples:\n\
+  Seedream -> SEE-dream\n\
+  OAuth -> OH-auth\n\
+  ByteDance -> BITE-dance\n\
+  kubectl -> KOO-buh-cuhl\n\
+  Aeolus -> A-less";
+    let user = term.as_str();
+
+    let outcome = match provider.as_str() {
+        "OpenAI" => openai_rewrite::rewrite(&http, &openai_key, &model, system, user).await,
+        "Google" => gemini::rewrite(&http, &gemini_key, &model, system, user).await,
+        "Groq" => groq::rewrite(&http, &groq_key, &model, system, user).await,
+        "Alibaba" => {
+            alibaba::rewrite(&http, &alibaba_key, &alibaba_base, &model, system, user).await
+        }
+        #[cfg(target_os = "macos")]
+        "Apple" => apple_fm::rewrite(system, user).await,
+        other => {
+            return Err(format!(
+                "Phonetic generation not available for rewrite provider '{}'",
+                other
+            ));
+        }
+    }
+    .map_err(|e| e.to_string())?;
+
+    // Trim whitespace + strip any stray surrounding quotes the model added
+    // despite the prompt — small instruct models love wrapping output in "".
+    let cleaned = outcome
+        .text
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`')
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        return Err("Model returned empty phonetic".into());
+    }
+    Ok(cleaned)
 }

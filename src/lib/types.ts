@@ -6,6 +6,10 @@ export interface HistoryEntry {
   duration_ms: number;
   created_at: string;
   favorited: boolean;
+  /** Combined rewrite-model prompt + completion tokens. 0 for local / Apple FM. */
+  tokens: number;
+  /** Total dictation cost in USD (speech per-minute + rewrite per-token). */
+  cost: number;
 }
 
 export interface VocabularyTerm {

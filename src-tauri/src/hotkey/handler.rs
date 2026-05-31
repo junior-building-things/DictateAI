@@ -13,10 +13,21 @@ use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING, STATE_RECORDING};
 
 const MIN_RECORDING_DURATION_MS: u128 = 300;
 
-/// Text typed into the focused field when recording starts. The pipeline
-/// replaces it with the final rewrite, or deletes it if the rewrite fails /
-/// is empty.
+/// Text typed into the focused field while we're capturing audio (toggle
+/// mode only). Replaced with `PROCESSING_PLACEHOLDER` on hotkey release, and
+/// then with the final rewrite once the pipeline finishes.
 pub const RECORDING_PLACEHOLDER: &str = "Listening...";
+
+/// Text shown after the user finishes speaking, while the speech + rewrite
+/// pipeline is running. Replaced with the final rewrite on completion.
+pub const PROCESSING_PLACEHOLDER: &str = "Rewriting...";
+
+/// Number of grapheme clusters in each placeholder string — used to drive
+/// `select_left` when we replace one placeholder with another (or with the
+/// final rewrite). Both strings are exactly 12 graphemes (9-letter word +
+/// three dots). Keeping the two placeholders the same length means we
+/// never have to renegotiate the count after the swap.
+const PLACEHOLDER_GRAPHEMES: usize = 12;
 
 pub struct HotkeyState {
     pub press_time: Mutex<Option<Instant>>,
@@ -74,11 +85,12 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
         return;
     }
 
-    // Type the "Listening..." placeholder into the focused field if auto-paste
-    // is on. The pipeline replaces it with the final rewrite (or deletes it on
-    // failure). Best-effort: if accessibility isn't granted or the focused
-    // surface rejects input, we just skip the placeholder and let the pipeline
-    // paste at the end as before.
+    // Type the 🎙️ recording placeholder into the focused field if
+    // auto-paste is on. On hotkey release we swap it for ✏️ (processing),
+    // and the pipeline replaces that with the final rewrite — or deletes
+    // it on failure. Best-effort: if accessibility isn't granted or the
+    // focused surface rejects input, we just skip the placeholder and let
+    // the pipeline paste at the end as before.
     let auto_paste = auto_paste_enabled(app_state);
     log::info!(
         "Hotkey press: auto_paste={}, scheduling placeholder",
@@ -92,7 +104,7 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
                 .unwrap_or(false)
         };
         // Placeholder is toggle-mode only. In hold mode we just paste the
-        // final rewrite when the pipeline finishes — no "Listening..." chip.
+        // final rewrite when the pipeline finishes — no 🎙️ / ✏️ chip.
         // The OS hotkey grab blocks every userland injection strategy we
         // tried during the hold period, so the placeholder UX added no
         // value (it would only appear during the brief pipeline phase
@@ -114,9 +126,11 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
             }
             match paste::simulate::insert_text(RECORDING_PLACEHOLDER) {
                 Ok(()) => {
-                    let len = RECORDING_PLACEHOLDER.chars().count();
-                    *state.pending_placeholder.lock().unwrap() = Some(len);
-                    log::info!("Inserted placeholder ({} chars)", len);
+                    *state.pending_placeholder.lock().unwrap() = Some(PLACEHOLDER_GRAPHEMES);
+                    log::info!(
+                        "Inserted recording placeholder '{}' ({} grapheme)",
+                        RECORDING_PLACEHOLDER, PLACEHOLDER_GRAPHEMES
+                    );
                 }
                 Err(e) => {
                     log::warn!("Could not insert recording placeholder: {}", e);
@@ -202,6 +216,15 @@ pub fn on_released(
                 log::info!("Captured {} audio samples", audio_data.len());
                 app_state.set_state(STATE_PROCESSING);
                 let _ = tauri::Emitter::emit(app, "state-changed", "processing");
+                // NOTE: the "Listening…" → "Rewriting…" swap used to live
+                // here, but it ran synchronously which raced the still-in-
+                // flight trigger-key release. macOS combined our injected
+                // Shift with the still-down hotkey modifier, so select_left
+                // didn't actually select — the swap just inserted text
+                // before "Listening…" instead of overwriting it. The swap
+                // now lives in `finalize_recording` below, gated on a
+                // 200 ms settle delay (same value used at press time for
+                // the same reason).
                 Some(audio_data)
             }
         }
@@ -233,7 +256,68 @@ fn auto_paste_enabled(app_state: &AppState) -> bool {
         .unwrap_or(true)
 }
 
-/// Remove any leftover "Listening..." placeholder when we bail before
+/// Run the post-recording sequence: settle delay → "Listening…" → "Rewriting…"
+/// placeholder swap → pipeline. Designed to be awaited inside a spawned
+/// task by every `on_released` call site.
+///
+/// The 200 ms `tokio::sleep` is the same value we use at press time to give
+/// the trigger key (right-Option, ⌘S, whatever) time to fully release
+/// before we start synthesizing Shift+Arrow events. Without it, macOS
+/// combines our injected Shift with the still-down hotkey modifier and
+/// `select_left` silently degrades to plain LeftArrow presses — the swap
+/// inserts text *before* the placeholder instead of overwriting it,
+/// stranding "Listening…" in the document.
+pub async fn finalize_recording(app: tauri::AppHandle, audio_data: Vec<f32>) {
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Swap the recording placeholder (🎙️ / "Listening…") for the
+    // processing placeholder (✏️ / "Rewriting…"). Toggle-mode only — hold
+    // mode never types a placeholder, so `pending_placeholder` is None
+    // there and this block is a no-op. Both strings are 12 graphemes so
+    // the stored count stays at PLACEHOLDER_GRAPHEMES; the pipeline's
+    // final replace will still target the right number of chars.
+    //
+    // The `app.state()` read is split into a sync helper so the borrow
+    // checker can prove no managed-state reference survives across the
+    // `pipeline::run(app, ...).await` below — async fns require all
+    // borrows of captured locals to end at .await points.
+    let pending = read_pending_placeholder(&app);
+    if let Some(len) = pending {
+        match paste::simulate::replace_placeholder_fast(len, PROCESSING_PLACEHOLDER) {
+            Ok(()) => log::info!("Swapped placeholder to '{}'", PROCESSING_PLACEHOLDER),
+            Err(e) => log::warn!("Could not swap placeholder to processing: {}", e),
+        }
+    }
+
+    if let Err(e) = crate::pipeline::run(app, audio_data).await {
+        log::error!("Pipeline failed: {}", e);
+    }
+}
+
+fn read_pending_placeholder(app: &tauri::AppHandle) -> Option<usize> {
+    use tauri::Manager;
+    let app_state = app.state::<AppState>();
+    // Bind to a named local so the `MutexGuard` temporary drops at this
+    // semicolon — temporaries in a function's tail expression otherwise
+    // outlive their containing locals (E0597).
+    let value = *app_state.pending_placeholder.lock().unwrap();
+    value
+}
+
+/// Cancel an in-flight recording without going through the pipeline.
+/// Used by `right_option` when the user presses another key during a
+/// hold-mode recording — we don't want to transcribe the partial buffer.
+pub fn abort_recording(hotkey_state: &HotkeyState, app_state: &AppState) {
+    if !app_state.is_recording() {
+        return;
+    }
+    app_state.set_state(STATE_IDLE);
+    cleanup_placeholder(app_state);
+    let _ = hotkey_state.audio_capture.stop();
+    log::info!("Right-Option: recording aborted (another key pressed during hold)");
+}
+
+/// Remove any leftover 🎙️ / ✏️ placeholder when we bail before
 /// reaching the pipeline (short press, max duration, capture error).
 fn cleanup_placeholder(app_state: &AppState) {
     if let Some(len) = app_state.pending_placeholder.lock().unwrap().take() {

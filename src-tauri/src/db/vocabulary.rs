@@ -38,6 +38,17 @@ pub fn get_all(conn: &Connection) -> AppResult<Vec<VocabularyTerm>> {
     Ok(terms)
 }
 
+/// Case-insensitive existence check. Used by the "Add 'X' to
+/// vocabulary?" pill to avoid prompting for terms the user has
+/// already accepted (e.g., the user added "CTR" yesterday and the
+/// edit-monitor surfaces it again today).
+pub fn term_exists(conn: &Connection, term: &str) -> AppResult<bool> {
+    let mut stmt =
+        conn.prepare("SELECT 1 FROM vocabulary WHERE LOWER(term) = LOWER(?1) LIMIT 1")?;
+    let exists = stmt.exists(rusqlite::params![term])?;
+    Ok(exists)
+}
+
 pub fn add_term(
     conn: &Connection,
     term: &str,

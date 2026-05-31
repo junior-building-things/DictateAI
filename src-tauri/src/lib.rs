@@ -1,4 +1,6 @@
 mod audio;
+#[cfg(target_os = "macos")]
+mod ax;
 mod commands;
 mod db;
 mod error;
@@ -6,6 +8,7 @@ mod hotkey;
 mod overlay;
 mod paste;
 mod pipeline;
+mod pricing;
 mod processing_mode;
 mod rewrite;
 mod state;
@@ -19,6 +22,22 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use crate::db::{schema, settings};
 use crate::hotkey::handler::HotkeyState;
 use crate::state::AppState;
+
+/// Sentinel string the frontend writes to the `hotkey` setting when the user
+/// picks "Right Option" — a modifier-only binding that the standard
+/// `RegisterEventHotKey` API doesn't accept. Matched on both startup
+/// registration and the `update_hotkey` command.
+pub const RIGHT_OPTION_SENTINEL: &str = "Right Option";
+
+/// Auto-deletion horizon for non-starred history entries. Rows older than
+/// this on app launch get pruned; starred rows are kept indefinitely.
+/// Backs the public privacy claim ("auto-deleted after 30 days unless
+/// starred") so change this only in concert with the marketing copy.
+pub const HISTORY_RETENTION_DAYS: u32 = 30;
+
+fn is_right_option_sentinel(value: &str) -> bool {
+    value.eq_ignore_ascii_case(RIGHT_OPTION_SENTINEL)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,9 +63,10 @@ pub fn run() {
                                 {
                                     let app_clone = app.clone();
                                     tauri::async_runtime::spawn(async move {
-                                        if let Err(e) = pipeline::run(app_clone, audio_data).await {
-                                            log::error!("Pipeline failed: {}", e);
-                                        }
+                                        hotkey::handler::finalize_recording(
+                                            app_clone, audio_data,
+                                        )
+                                        .await;
                                     });
                                 }
                             } else if app_state.is_idle() {
@@ -66,9 +86,10 @@ pub fn run() {
                             {
                                 let app_clone = app.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    if let Err(e) = pipeline::run(app_clone, audio_data).await {
-                                        log::error!("Pipeline failed: {}", e);
-                                    }
+                                    hotkey::handler::finalize_recording(
+                                        app_clone, audio_data,
+                                    )
+                                    .await;
                                 });
                             }
                         }
@@ -120,6 +141,21 @@ pub fn run() {
                 log::warn!("Secret migration to Keychain failed (non-fatal): {}", e);
             }
 
+            // Auto-prune: drop history rows older than 30 days that aren't
+            // starred. Backs the privacy claim that "dictations are stored
+            // locally and auto-deleted after 30 days unless starred."
+            // Runs once at startup — sufficient for daily-use apps; for
+            // very long sessions, a background interval would be the
+            // belt-and-suspenders option.
+            match crate::db::history::prune_unstarred_older_than(&conn, HISTORY_RETENTION_DAYS) {
+                Ok(0) => {}
+                Ok(n) => log::info!(
+                    "Pruned {} history rows older than {} days (unstarred)",
+                    n, HISTORY_RETENTION_DAYS
+                ),
+                Err(e) => log::warn!("History auto-prune failed (non-fatal): {}", e),
+            }
+
             // Create app state
             let app_state = AppState::new(conn);
             app.manage(app_state);
@@ -130,18 +166,47 @@ pub fn run() {
             let hotkey_state = HotkeyState::new().expect("Failed to create hotkey state");
             app.manage(hotkey_state);
 
-            // Register global hotkey
+            // Shared "next term to display in the overlay's vocab-prompt
+            // mode" bucket — see `overlay::PendingVocabTerm` for the why.
+            app.manage(overlay::PendingVocabTerm::default());
+
+            // Right-Option monitor is managed even when not currently in
+            // use — `update_hotkey` can start it at runtime if the user
+            // switches to "Right Option" later. macOS only.
+            #[cfg(target_os = "macos")]
+            {
+                app.manage(hotkey::right_option::RightOptionMonitor::new());
+            }
+
+            // Read configured hotkey. Special sentinel "Right Option" picks
+            // the NSEvent-based monitor path; anything else goes through
+            // the standard global-shortcut plugin.
             let hotkey_str = {
                 let st = handle.state::<AppState>();
                 let db = st.db.lock().unwrap();
                 settings::get(&db, "hotkey").unwrap_or_else(|_| "CommandOrControl+S".into())
             };
 
-            let shortcut: Shortcut = hotkey_str
-                .parse()
-                .unwrap_or_else(|_| "CommandOrControl+S".parse().unwrap());
-
-            app.global_shortcut().register(shortcut)?;
+            if is_right_option_sentinel(&hotkey_str) {
+                #[cfg(target_os = "macos")]
+                {
+                    app.state::<hotkey::right_option::RightOptionMonitor>()
+                        .start(handle.clone());
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    log::warn!(
+                        "'Right Option' hotkey is macOS-only; falling back to default."
+                    );
+                    let shortcut: Shortcut = "CommandOrControl+S".parse().unwrap();
+                    app.global_shortcut().register(shortcut)?;
+                }
+            } else {
+                let shortcut: Shortcut = hotkey_str
+                    .parse()
+                    .unwrap_or_else(|_| "CommandOrControl+S".parse().unwrap());
+                app.global_shortcut().register(shortcut)?;
+            }
 
             // Setup system tray
             tray::setup(app.handle())?;
@@ -170,6 +235,32 @@ pub fn run() {
             // app keeps starting normally if this is slow.
             pipeline::prewarm(handle.clone());
 
+            // Overlay window must be declared `visible: true` in
+            // tauri.conf.json — on this Tauri 2 + macOS combo, a
+            // `visible: false` window never attaches its WKWebView, so
+            // React never mounts, `take_pending_vocab_term` is never
+            // called, and the pill never renders no matter how many
+            // `window.show()` calls we make. (Confirmed via three
+            // separate diagnostic passes: magenta-CSS test, main-thread
+            // dispatch test, and a definitive log showing show()
+            // returning Ok but no React mount.)
+            //
+            // To keep the window invisible to the user when not
+            // actively prompting, we park it WAY off-screen here. The
+            // OS thinks it's always shown, the WKWebView stays
+            // attached, React mounts, the `overlay-state` listener
+            // stays registered. `overlay::show_vocab` just teleports
+            // the window on-screen; `overlay::hide` teleports it back
+            // off-screen.
+            if let Some(overlay_win) = app.get_webview_window("overlay") {
+                overlay::park_offscreen(&overlay_win);
+                #[cfg(target_os = "macos")]
+                overlay::apply_fullscreen_overlay_behavior_public(&overlay_win);
+                log::info!("overlay: parked off-screen + NSPanel behavior applied");
+            } else {
+                log::warn!("overlay: window 'overlay' not found at startup");
+            }
+
             log::info!("App setup complete");
             Ok(())
         })
@@ -188,6 +279,11 @@ pub fn run() {
             commands::add_vocabulary_term,
             commands::update_vocabulary_term,
             commands::delete_vocabulary_term,
+            commands::generate_phonetic,
+            commands::show_vocab_prompt,
+            commands::hide_vocab_prompt,
+            commands::take_pending_vocab_term,
+            commands::frontend_ping,
             commands::get_available_models,
             commands::local_model_status,
             commands::download_local_model,
@@ -201,6 +297,7 @@ pub fn run() {
             commands::validate_alibaba_api_key,
             commands::validate_groq_api_key,
             commands::get_app_state,
+            commands::processing_mode_status,
             commands::cancel_processing,
             commands::start_manual_recording,
             commands::stop_manual_recording,

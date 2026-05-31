@@ -4,15 +4,25 @@ import {
   BookText,
   History as HistoryIcon,
   Home as HomeIcon,
-  LogOut,
   Moon,
   Settings as SettingsIcon,
   Sun,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useI18n } from "../../lib/i18n";
+import { useAppStore } from "../../lib/store";
 import { DictationProvider } from "../../lib/useDictation";
 import { cn } from "../../lib/utils";
+import { learnNewVocabTerms } from "../../lib/vocabLearn";
+
+/** Payload of the `dictation-edited` Tauri event fired by the backend's
+ * post-paste AX watcher when it sees the user manually correct text in
+ * the destination app within 60 s of a dictation. */
+type DictationEditedPayload = {
+  pasted: string;
+  edited: string;
+};
 
 type PageMeta = {
   title: string;
@@ -30,10 +40,32 @@ export const Layout = () => {
 const LayoutInner = () => {
   const location = useLocation();
   const { t } = useI18n();
+  const { hotkeySettings } = useAppStore();
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     if (typeof window === "undefined") return "dark";
     return (localStorage.getItem("dictateai.theme") as "dark" | "light" | null) ?? "dark";
   });
+
+  // Listen for the backend's `dictation-edited` event — fired when the
+  // post-paste AX watcher sees the user manually correct text in the
+  // destination app within ~60s of a dictation. We route the diff through
+  // the same "Add 'X' to vocabulary?" toast prompt the History inline-edit
+  // flow uses. Gated on the Auto-add vocabulary preference; if it's off,
+  // the backend already skips spawning the watcher, but we re-check here
+  // for belt-and-suspenders symmetry.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    void listen<DictationEditedPayload>("dictation-edited", (event) => {
+      if (!hotkeySettings.autoAddVocabulary) return;
+      const { pasted, edited } = event.payload;
+      learnNewVocabTerms(pasted, edited);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [hotkeySettings.autoAddVocabulary]);
 
   // Apply theme to <html> so token overrides cascade everywhere.
   useEffect(() => {
@@ -48,16 +80,16 @@ const LayoutInner = () => {
 
   const sidebarItems = [
     { icon: HomeIcon, label: t("navHome"), path: "/" },
-    { icon: HistoryIcon, label: t("navHistory"), path: "/history" },
     { icon: BookText, label: t("navVocabulary"), path: "/vocabulary" },
-    { icon: SettingsIcon, label: "Settings", path: "/settings" },
+    { icon: HistoryIcon, label: t("navHistory"), path: "/history" },
+    { icon: SettingsIcon, label: t("tabGeneral"), path: "/settings" },
   ];
 
   const pageMeta: Record<string, PageMeta> = {
-    "/": { title: t("navHome"), sub: "Press the hotkey from anywhere." },
-    "/history": { title: t("navHistory"), sub: "Every dictation, searchable." },
-    "/vocabulary": { title: t("navVocabulary"), sub: "Custom terms preserved across rewrites." },
-    "/settings": { title: "Settings", sub: "Permissions, models, languages, and rewrite rules." },
+    "/": { title: t("navHome"), sub: t("homeSub") },
+    "/vocabulary": { title: t("navVocabulary"), sub: t("vocabularySub") },
+    "/history": { title: t("navHistory"), sub: t("historySub") },
+    "/settings": { title: t("tabGeneral"), sub: t("settingsSub") },
   };
   const currentPage = pageMeta[location.pathname] ?? pageMeta["/"];
 
@@ -142,38 +174,6 @@ const LayoutInner = () => {
               </NavLink>
             ))}
           </nav>
-
-          {/* Footer: just the user / log-out row. */}
-          <div
-            className="relative mt-auto border-t pt-3"
-            style={{ borderColor: "var(--hairline)" }}
-          >
-            <div className="flex items-center gap-2.5 px-1.5">
-              <div
-                className="grid size-[26px] shrink-0 place-items-center rounded-full text-[10px] font-semibold"
-                style={{
-                  background:
-                    "linear-gradient(135deg, oklch(0.74 0.14 295), oklch(0.82 0.14 188))",
-                  color: "var(--bg)",
-                }}
-              >
-                YL
-              </div>
-              <div>
-                <div className="text-[12px]" style={{ color: "var(--text)" }}>
-                  Yifan Liu
-                </div>
-                <button
-                  type="button"
-                  className="mono-label mt-px inline-flex items-center gap-1.5 transition-colors hover:!text-[var(--text)]"
-                  style={{ fontSize: "10px", letterSpacing: "0.06em", color: "var(--text-dim)" }}
-                >
-                  <LogOut className="size-[10px]" strokeWidth={2} />
-                  Log out
-                </button>
-              </div>
-            </div>
-          </div>
         </aside>
 
         {/* ============ Main ============ */}
@@ -200,7 +200,7 @@ const LayoutInner = () => {
               <button
                 type="button"
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                aria-label="Toggle theme"
+                aria-label={t("toggleThemeLabel")}
                 className="grid size-8 place-items-center rounded-md transition-colors hover:!text-[var(--text)]"
                 style={{
                   background: "transparent",
@@ -217,13 +217,18 @@ const LayoutInner = () => {
             </div>
           </header>
 
-          <div className="relative flex-1 overflow-auto">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             {/* Route changes drop the previous DOM (no exit animation) and
              * the new page mounts with the global `.screen-fade` keyframe.
              * Pages render their own toolbar (Settings tabs, History
-             * search, Vocabulary add-row) flush against the topbar's
-             * hairline, then a `.page-body` wrapper holds the content. */}
-            <div key={location.pathname} className="relative z-10 min-h-full screen-fade">
+             * search, Vocabulary add-row) followed by a `.page-scroll`
+             * wrapper — the only element that actually scrolls — so the
+             * scrollbar sits flush below the page chrome and never runs
+             * past the toolbar / table header. */}
+            <div
+              key={location.pathname}
+              className="relative z-10 flex h-full min-h-0 flex-col screen-fade"
+            >
               <Outlet />
             </div>
           </div>

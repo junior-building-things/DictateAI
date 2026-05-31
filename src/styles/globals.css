@@ -491,6 +491,36 @@ select.input-control option {
   vertical-align: 2px;
   color: var(--ai);
 }
+/* Inline clickable phrase inside the unconfigured-state headline. Inherits
+ * the headline's full font scale so it reads as part of the sentence —
+ * the only differentiation is the accent color and a thin underline that
+ * sits a few pixels below the baseline. */
+.hero-headline .hero-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--btn-ai-text);
+  text-decoration: underline;
+  /* Underline is intentionally faint — a translucent blue at 1 px sits
+   * just enough below the baseline to read as a link without competing
+   * with the headline copy. Goes fully opaque on hover. */
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgb(var(--btn-ai-base) / 0.35);
+  text-underline-offset: 4px;
+  cursor: pointer;
+  transition: text-decoration-color 0.12s ease, opacity 0.12s ease;
+}
+.hero-headline .hero-link:hover {
+  text-decoration-color: rgb(var(--btn-ai-base) / 0.7);
+  opacity: 0.95;
+}
+.hero-headline .hero-link:focus-visible {
+  outline: 2px solid var(--btn-ai-border-hover);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .hero-tagline {
   margin-top: 8px;
   font-size: 13px;
@@ -556,12 +586,18 @@ select.input-control option {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  /* Reserve one full line of height so values like "0" and "1,234" both
+   * occupy the same vertical band — keeps the `.stat-sub` below them
+   * aligned across cards even when one value wraps narrower than another. */
+  line-height: 1.2;
+  min-height: 1.2em;
 }
+/* Mono variant keeps the same size + weight as the default so numbers
+ * read at uniform scale across tiles — only the font family changes
+ * (tabular digits, useful for fast scanning of counts). */
 .stat-val.mono {
   font-family: var(--font-mono);
-  font-size: 16px;
   letter-spacing: 0;
-  font-weight: 500;
 }
 .stat-sub {
   font-size: 11px;
@@ -569,6 +605,10 @@ select.input-control option {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Push the sub-label to the bottom of the card so all four sit on the
+   * same baseline. The grid row gives every card identical height, and
+   * `margin-top: auto` consumes whatever extra space is above. */
+  margin-top: auto;
 }
 
 /* ============================================================================
@@ -577,12 +617,17 @@ select.input-control option {
  * the full main width — no inner padding wrapper around them. Page bodies
  * live below in `.page-body` with their own 24px padding.
  * ============================================================================ */
+/* Page-chrome rows (tabbar, search toolbar, add-term row) live OUTSIDE the
+ * page scroll container so the scrollbar never runs alongside them. Each
+ * sits at its natural flow position; the `.page-scroll` sibling below
+ * handles the actual scrolling. */
 .tabbar {
   display: flex;
   gap: 4px;
   padding: 0 20px;
   border-bottom: 1px solid var(--hairline);
   background: var(--bg-elev-1);
+  flex-shrink: 0;
 }
 .tab-toolbar {
   display: flex;
@@ -592,6 +637,7 @@ select.input-control option {
   border-bottom: 1px solid var(--hairline);
   background: var(--bg-elev-1);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 .add-term-row {
   display: grid;
@@ -601,6 +647,130 @@ select.input-control option {
   border-bottom: 1px solid var(--hairline);
   background: var(--bg-elev-1);
   align-items: center;
+  flex-shrink: 0;
+}
+/* ============================================================================
+ * Modal dialog — centered card with a scrim. Rendered always, gated by an
+ * `.open` class so we can transition in/out. Used by Vocabulary's add/edit
+ * flow; the chrome (background, border, radius) follows the same panel
+ * tokens as `.s-group` so it doesn't look like a third-party widget.
+ * ========================================================================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: oklch(0 0 0 / 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+.modal-overlay.open {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.12s ease, visibility 0s;
+}
+.modal {
+  width: min(440px, 100%);
+  background: var(--bg-elev-1);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-lg);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(4px) scale(0.99);
+  transition: transform 0.14s ease;
+}
+.modal-overlay.open .modal {
+  transform: translateY(0) scale(1);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.modal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  flex: 1;
+}
+.modal-close {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.modal-close:hover {
+  background: var(--hairline);
+  color: var(--text);
+}
+.modal-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.modal-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.modal-required {
+  color: var(--btn-ai-text);
+  margin-left: 2px;
+}
+.modal-field input {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--hairline);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.modal-field input::placeholder {
+  color: var(--text-dim);
+}
+.modal-field input:focus {
+  outline: none;
+  border-color: oklch(0.65 0.17 var(--ai-h) / 0.4);
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* The scrolling region inside each page. Flex-1 absorbs leftover height
+ * inside the column laid out by Layout's main section; min-height:0 lets
+ * it actually shrink under the toolbar (without this, flex children of a
+ * flex column don't honor overflow). */
+.page-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
 }
 .add-term-row input {
   height: 32px;
@@ -620,10 +790,20 @@ select.input-control option {
 }
 
 .page-body {
-  padding: 24px;
+  padding: 18px 24px 24px;
   width: 100%;
   max-width: 56rem;
   margin: 0 auto;
+  /* When used as a chrome row directly inside the flex column (e.g. the
+   * `.thead` wrapper in History/Vocabulary), don't let flex pressure
+   * shrink it. Harmless when used inside `.page-scroll` (no flex context). */
+  flex-shrink: 0;
+}
+/* History / Vocabulary lead with a `.thead` table-header row that should
+ * sit close to the toolbar above. Other pages (Settings tabs, Dashboard)
+ * keep the full 18px breathing room since they lead with cards/groups. */
+.page-body:has(> .thead) {
+  padding-top: 0;
 }
 .tab {
   position: relative;
@@ -664,11 +844,25 @@ select.input-control option {
 .thead {
   display: grid;
   padding: 10px 4px;
-  position: sticky;
-  top: 0;
   background: var(--bg-elev-1);
-  border-bottom: 1px solid var(--hairline);
+  /* `.thead` is rendered as a sibling of `.page-scroll` (outside the
+   * scrolling region) so no scrollbar can intrude into its row.
+   * Border-bottom is on the ::after pseudo so it can extend past
+   * the centered `.page-body` content width. */
+  position: relative;
+  flex-shrink: 0;
   z-index: 5;
+}
+.thead::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100vw;
+  height: 1px;
+  background: var(--hairline);
+  pointer-events: none;
 }
 .thead > div {
   font-family: var(--font-mono);
@@ -685,7 +879,9 @@ select.input-control option {
   padding: 14px 4px 8px;
   background: var(--bg-elev-1);
   position: sticky;
-  top: 33px;
+  /* Sticky inside `.page-scroll`, which starts just below the now-outside
+   * `.thead`. So this pin to the top of its own scroll context (top: 0). */
+  top: 0;
   z-index: 4;
 }
 .tgroup-pill {
@@ -727,11 +923,17 @@ select.input-control option {
   background: var(--bg-elev-2);
 }
 .t-history {
-  grid-template-columns: 90px minmax(180px, 1fr) minmax(180px, 1fr) 60px 80px;
+  /* Spoken + Rewritten share the available width 50/50; Actions is a
+   * fixed pill on the right. Time + Words columns were removed at user
+   * request — search/filter chrome above the table already conveys when
+   * an entry was created, and word counts felt redundant with the text. */
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) 80px;
   gap: 16px;
 }
 .t-vocab {
-  grid-template-columns: minmax(120px, 200px) minmax(120px, 200px) minmax(160px, 1fr) 80px 80px;
+  /* Term / Phonetic / Definition / Actions — Category column was
+   * removed at user request (rarely set, redundant signal). */
+  grid-template-columns: minmax(120px, 200px) minmax(120px, 200px) minmax(160px, 1fr) 80px;
   gap: 16px;
 }
 .cell-time {
@@ -922,7 +1124,10 @@ select.input-control option {
   margin-bottom: 0;
 }
 .s-group-head {
-  padding: 0 0 12px;
+  /* Tight bottom gap — combined with the first `.s-row`'s own 12px
+   * top padding, this yields ~16px between the title bar and the
+   * first row's content. */
+  padding: 0 0 4px;
   display: flex;
   align-items: center;
   gap: 10px;

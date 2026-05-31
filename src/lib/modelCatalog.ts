@@ -1,4 +1,4 @@
-export type SpeechProvider = "Alibaba" | "Deepgram" | "NVIDIA" | "OpenAI";
+export type SpeechProvider = "Alibaba" | "Deepgram" | "Groq" | "NVIDIA" | "OpenAI";
 export type RewriteProvider = "Alibaba" | "Apple" | "Google" | "Groq" | "OpenAI";
 
 /// Local-engine model IDs that pair with the on-device providers (NVIDIA for
@@ -23,8 +23,8 @@ export interface ModelMetrics {
   cost: string;
 }
 
-export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "NVIDIA";
-export const DEFAULT_REWRITE_PROVIDER: RewriteProvider = "Groq";
+export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "Groq";
+export const DEFAULT_REWRITE_PROVIDER: RewriteProvider = "Google";
 
 const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
   Alibaba: [
@@ -48,6 +48,30 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
         latency: "200-300 ms",
         accuracy: "5-7% WER",
         cost: "$0.0077/min",
+      },
+    },
+  ],
+  Groq: [
+    {
+      label: "whisper-large-v3",
+      setting: "whisper-large-v3",
+      description:
+        "OpenAI Whisper Large v3 served on Groq's LPU infrastructure for near-real-time latency.",
+      metrics: {
+        latency: "200-400 ms",
+        accuracy: "4-6% WER",
+        cost: "$0.111/hr",
+      },
+    },
+    {
+      label: "whisper-large-v3-turbo",
+      setting: "whisper-large-v3-turbo",
+      description:
+        "Distilled Whisper Large v3 Turbo on Groq. Roughly 2-3x faster than v3 with a small accuracy trade-off.",
+      metrics: {
+        latency: "100-200 ms",
+        accuracy: "5-7% WER",
+        cost: "$0.04/hr",
       },
     },
   ],
@@ -137,9 +161,9 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
       },
     },
     {
-      label: "gemini-3.1-flash-lite-preview",
-      setting: "gemini-3.1-flash-lite-preview",
-      description: "Maps to Google's public Gemini 3.1 Flash-Lite preview model.",
+      label: "gemini-3.1-flash-lite",
+      setting: "gemini-3.1-flash-lite",
+      description: "Google's Gemini 3.1 Flash-Lite — fast, low-cost, the default rewrite model.",
       metrics: {
         latency: "100-300 ms",
         accuracy: "Faster output (45% faster)",

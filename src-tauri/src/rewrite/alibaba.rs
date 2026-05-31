@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
+use crate::rewrite::RewriteOutcome;
 
 #[derive(Serialize)]
 struct ChatCompletionRequest {
@@ -23,7 +24,7 @@ pub async fn rewrite(
     model: &str,
     system_prompt: &str,
     user_message: &str,
-) -> AppResult<String> {
+) -> AppResult<RewriteOutcome> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config(
             "Alibaba rewrite requires alibaba_api_key in settings.".into(),
@@ -71,10 +72,27 @@ pub async fn rewrite(
         AppError::Rewrite(format!("Failed to parse Alibaba response: {}", error))
     })?;
 
-    extract_text(&parsed)
+    let text = extract_text(&parsed)
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty())
-        .ok_or_else(|| AppError::Rewrite("Empty response from Alibaba rewrite.".into()))
+        .ok_or_else(|| AppError::Rewrite("Empty response from Alibaba rewrite.".into()))?;
+
+    // DashScope's OpenAI-compatible endpoint mirrors the `usage` block;
+    // grab it best-effort and 0-out on absence.
+    let prompt_tokens = parsed
+        .pointer("/usage/prompt_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let completion_tokens = parsed
+        .pointer("/usage/completion_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+
+    Ok(RewriteOutcome {
+        text,
+        prompt_tokens,
+        completion_tokens,
+    })
 }
 
 pub async fn validate_api_key(

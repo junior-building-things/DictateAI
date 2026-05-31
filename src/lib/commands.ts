@@ -57,6 +57,12 @@ export const addVocabularyTerm = (
 ) =>
   invoke<number>("add_vocabulary_term", { term, phonetic, definition, category });
 
+/** Ask the configured rewrite model for a simple ASCII phonetic of a term.
+ * Rejects if the user's rewrite provider isn't reachable (no API key, etc.) —
+ * callers should fall back to a null phonetic on error. */
+export const generatePhonetic = (term: string) =>
+  invoke<string>("generate_phonetic", { term });
+
 export const updateVocabularyTerm = (
   id: number,
   term: string,
@@ -126,6 +132,17 @@ export const appleFmAvailability = () =>
 // App State
 export const getAppState = () =>
   invoke<string>("get_app_state");
+
+export interface ProcessingModeStatus {
+  speechReady: boolean;
+  rewriteReady: boolean;
+}
+
+/** Whether the currently-selected speech + rewrite providers have their
+ * credentials / local models in place. Drives the Dashboard's "Configure
+ * speech/rewrite model" hero copy. */
+export const getProcessingModeStatus = () =>
+  invoke<ProcessingModeStatus>("processing_mode_status");
 
 export const cancelProcessing = () =>
   invoke<void>("cancel_processing");

@@ -7,6 +7,7 @@ import {
   downloadLocalModel,
   localModelStatus,
 } from "../lib/commands";
+import { useI18n } from "../lib/i18n";
 
 interface LocalModelProgress {
   id: string;
@@ -27,6 +28,7 @@ export interface LocalModelCardProps {
  * the API-key rows in the Models tab. No card chrome, no duplicate title.
  */
 export default function LocalModelCard({ modelId }: LocalModelCardProps) {
+  const { t } = useI18n();
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [phase, setPhase] = useState<LocalModelProgress["phase"] | null>(null);
   const [bytesDone, setBytesDone] = useState(0);
@@ -74,7 +76,7 @@ export default function LocalModelCard({ modelId }: LocalModelCardProps) {
       const status = await localModelStatus(modelId).catch(() => null);
       setInstalled(status?.installed ?? true);
       setPhase(null);
-      toast.success("Installed");
+      toast.success(t("installedToast"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
       setPhase(null);
@@ -89,7 +91,7 @@ export default function LocalModelCard({ modelId }: LocalModelCardProps) {
       await deleteLocalModel(modelId);
       setInstalled(false);
       setPhase(null);
-      toast.success("Deleted");
+      toast.success(t("deletedToast"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -109,12 +111,12 @@ export default function LocalModelCard({ modelId }: LocalModelCardProps) {
         {busy && phase === "downloading" ? (
           <button type="button" className="btn" disabled>
             <Loader2 strokeWidth={2} className="animate-spin" />
-            {percent !== null ? `Downloading… ${percent}%` : "Downloading…"}
+            {percent !== null ? t("downloadingPercent", { percent }) : t("downloadingLabel")}
           </button>
         ) : installed ? (
           <button type="button" className="btn" onClick={() => void handleDelete()} disabled={busy}>
             <Trash2 strokeWidth={2} />
-            Remove
+            {t("removeBtnLabel")}
           </button>
         ) : (
           <button
@@ -124,7 +126,7 @@ export default function LocalModelCard({ modelId }: LocalModelCardProps) {
             disabled={busy}
           >
             <Download strokeWidth={2} />
-            Download
+            {t("downloadBtnLabel")}
           </button>
         )}
       </div>

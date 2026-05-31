@@ -17,6 +17,9 @@ use crate::error::{AppError, AppResult};
 pub struct SpeechApiSettings {
     pub deepgram_api_key: String,
     pub openai_api_key: String,
+    /// Separate from the rewrite-side `groq_api_key` setting so users can
+    /// route speech and rewrite through different Groq accounts/keys.
+    pub groq_api_key: String,
     pub google_api_key: String,
     pub google_project_id: String,
     pub google_region: String,
@@ -53,6 +56,16 @@ pub async fn transcribe(
                 language,
                 model,
                 &settings.openai_api_key,
+            )
+            .await
+        }
+        "whisper-large-v3" | "whisper-large-v3-turbo" => {
+            transcribe_groq(
+                client,
+                &wav_bytes,
+                language,
+                model,
+                &settings.groq_api_key,
             )
             .await
         }
@@ -144,6 +157,7 @@ pub async fn validate_google_speech_config(
     let settings = SpeechApiSettings {
         deepgram_api_key: String::new(),
         openai_api_key: String::new(),
+        groq_api_key: String::new(),
         google_api_key: api_key.trim().to_string(),
         google_project_id: project_id.trim().to_string(),
         google_region: if region.trim().is_empty() {
@@ -292,6 +306,64 @@ async fn transcribe_openai(
         .json()
         .await
         .map_err(|e| AppError::Transcription(format!("Failed to parse OpenAI response: {}", e)))?;
+
+    Ok(parsed.text.trim().to_string())
+}
+
+/// Groq exposes Whisper through an OpenAI-compatible `/audio/transcriptions`
+/// endpoint, so the request shape mirrors `transcribe_openai` exactly — only
+/// the base URL and the API key source differ.
+async fn transcribe_groq(
+    client: &reqwest::Client,
+    wav_bytes: &[u8],
+    language: &str,
+    model: &str,
+    api_key: &str,
+) -> AppResult<String> {
+    if api_key.trim().is_empty() {
+        return Err(AppError::Config(
+            "Speech model requires Groq API key. Set speech_groq_api_key in settings.".into(),
+        ));
+    }
+
+    #[derive(Deserialize)]
+    struct GroqTranscriptionResponse {
+        text: String,
+    }
+
+    let file_part = multipart::Part::bytes(wav_bytes.to_vec())
+        .file_name("audio.wav")
+        .mime_str("audio/wav")
+        .map_err(|e| AppError::Transcription(format!("Failed to prepare audio part: {}", e)))?;
+
+    let form = multipart::Form::new()
+        .part("file", file_part)
+        .text("model", model.to_string())
+        .text("language", language.to_string());
+
+    let response = client
+        .post("https://api.groq.com/openai/v1/audio/transcriptions")
+        .bearer_auth(api_key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| {
+            AppError::Transcription(format!("Groq transcription request failed: {}", e))
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Transcription(format!(
+            "Groq transcription API returned {}: {}",
+            status, body
+        )));
+    }
+
+    let parsed: GroqTranscriptionResponse = response
+        .json()
+        .await
+        .map_err(|e| AppError::Transcription(format!("Failed to parse Groq response: {}", e)))?;
 
     Ok(parsed.text.trim().to_string())
 }

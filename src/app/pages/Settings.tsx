@@ -5,6 +5,7 @@ import { Home as GeneralPanel } from "./Home";
 import { Languages as LanguagesPanel } from "./Languages";
 import { Models as ModelsPanel } from "./Models";
 import { RewriteRules as RewriteRulesPanel } from "./RewriteRules";
+import { useI18n } from "../../lib/i18n";
 
 type Tab = "general" | "languages" | "models" | "rewrite";
 
@@ -18,6 +19,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Cpu }> = [
 ];
 
 export const Settings = () => {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window === "undefined") return "general";
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -33,6 +35,13 @@ export const Settings = () => {
     }
   }, [tab]);
 
+  const tabLabels: Record<Tab, string> = {
+    general: t("generalLabel"),
+    languages: t("navLanguages"),
+    models: t("navModels"),
+    rewrite: t("navRewriteRules"),
+  };
+
   return (
     <>
       <div className="tabbar">
@@ -46,18 +55,21 @@ export const Settings = () => {
               onClick={() => setTab(entry.id)}
             >
               <Icon strokeWidth={2} />
-              <span>{entry.label}</span>
+              <span>{tabLabels[entry.id]}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Re-mount on tab change so the `.screen-fade` keyframe replays. */}
-      <div key={tab} className="page-body screen-fade">
-        {tab === "general" && <GeneralPanel />}
-        {tab === "languages" && <LanguagesPanel />}
-        {tab === "models" && <ModelsPanel />}
-        {tab === "rewrite" && <RewriteRulesPanel />}
+      {/* Tab content sits inside the scroll wrapper; the `.tabbar` above
+       * stays fixed. Re-mount on tab change so `.screen-fade` replays. */}
+      <div className="page-scroll">
+        <div key={tab} className="page-body screen-fade">
+          {tab === "general" && <GeneralPanel />}
+          {tab === "languages" && <LanguagesPanel />}
+          {tab === "models" && <ModelsPanel />}
+          {tab === "rewrite" && <RewriteRulesPanel />}
+        </div>
       </div>
     </>
   );

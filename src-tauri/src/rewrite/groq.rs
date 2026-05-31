@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
+use crate::rewrite::RewriteOutcome;
 
 const GROQ_CHAT_COMPLETIONS_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -20,6 +21,8 @@ struct ChatMessage {
 #[derive(Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<ChatChoice>,
+    #[serde(default)]
+    usage: Option<TokenUsage>,
 }
 
 #[derive(Deserialize)]
@@ -32,13 +35,21 @@ struct ChatChoiceMessage {
     content: String,
 }
 
+#[derive(Deserialize, Default)]
+struct TokenUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
+}
+
 pub async fn rewrite(
     client: &reqwest::Client,
     api_key: &str,
     model: &str,
     system_prompt: &str,
     user_message: &str,
-) -> AppResult<String> {
+) -> AppResult<RewriteOutcome> {
     if api_key.trim().is_empty() {
         return Err(AppError::Config(
             "Groq rewrite requires groq_api_key in settings.".into(),
@@ -86,14 +97,19 @@ pub async fn rewrite(
         .await
         .map_err(|error| AppError::Rewrite(format!("Failed to parse Groq response: {}", error)))?;
 
-    let content = parsed
+    let usage = parsed.usage.unwrap_or_default();
+    let text = parsed
         .choices
         .into_iter()
         .next()
         .map(|choice| choice.message.content.trim().to_string())
         .unwrap_or_default();
 
-    Ok(content)
+    Ok(RewriteOutcome {
+        text,
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+    })
 }
 
 pub async fn validate_api_key(client: &reqwest::Client, api_key: &str) -> AppResult<()> {

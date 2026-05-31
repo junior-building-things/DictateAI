@@ -23,16 +23,17 @@
       {
         "title": "",
         "label": "overlay",
-        "width": 220,
+        "width": 360,
         "height": 40,
+        "x": -10000,
+        "y": -10000,
         "resizable": false,
-        "visible": false,
+        "visible": true,
         "decorations": false,
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "center": true,
         "focus": false
       }
     ],
@@ -69,6 +70,8 @@
       "infoPlist": "Info.plist",
       "minimumSystemVersion": "10.15"
     },
-    "resources": ["binaries/apple-fm-helper"]
+    "resources": [
+      "binaries/apple-fm-helper"
+    ]
   }
 }

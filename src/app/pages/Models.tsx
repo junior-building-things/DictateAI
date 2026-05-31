@@ -15,8 +15,6 @@ import {
   validateOpenAiApiKey,
 } from "../../lib/commands";
 import {
-  defaultRewriteModel,
-  defaultSpeechModel,
   getRewriteModelOptions,
   getSpeechModelOptions,
   rewriteProviderOptions,
@@ -56,12 +54,19 @@ export const Models = () => {
   const [alibabaKey, setAlibabaKey] = useState("");
   const [openAiKey, setOpenAiKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
+  /**
+   * Separate Groq key for the speech path. Users explicitly asked for
+   * speech + rewrite to be configurable independently (different
+   * accounts / billing buckets). Stored under `speech_groq_api_key`,
+   * distinct from the rewrite-side `groq_api_key`.
+   */
+  const [speechGroqKey, setSpeechGroqKey] = useState("");
   const [action, setAction] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const [d, gs, gp, gr, g, a, o, q] = await Promise.all([
+      const [d, gs, gp, gr, g, a, o, q, sq] = await Promise.all([
         getSetting("speech_deepgram_api_key").catch(() => ""),
         getSetting("speech_google_api_key").catch(() => ""),
         getSetting("speech_google_project_id").catch(() => ""),
@@ -70,6 +75,7 @@ export const Models = () => {
         getSetting("alibaba_api_key").catch(() => ""),
         getSetting("speech_openai_api_key").catch(() => ""),
         getSetting("groq_api_key").catch(() => ""),
+        getSetting("speech_groq_api_key").catch(() => ""),
       ]);
       if (!active) return;
       setDeepgramKey(d);
@@ -80,6 +86,7 @@ export const Models = () => {
       setAlibabaKey(a);
       setOpenAiKey(o);
       setGroqKey(q);
+      setSpeechGroqKey(sq);
     };
     void load();
     return () => {
@@ -209,11 +216,20 @@ export const Models = () => {
   const saveGroq = () =>
     runAction("save-groq", async () => {
       const k = groqKey.trim();
-      if (!k) throw new Error("Enter a Groq API key first.");
+      if (!k) throw new Error(t("enterGroqApiKeyFirst"));
       await validateGroqApiKey(k);
       await saveSetting("groq_api_key", k);
       emitSettingsChanged();
-      toast.info("Groq API key validated and saved.");
+      toast.info(t("groqKeyValidatedAndSaved"));
+    });
+  const saveSpeechGroq = () =>
+    runAction("save-speech-groq", async () => {
+      const k = speechGroqKey.trim();
+      if (!k) throw new Error(t("enterGroqApiKeyFirst"));
+      await validateGroqApiKey(k);
+      await saveSetting("speech_groq_api_key", k);
+      emitSettingsChanged();
+      toast.info(t("groqSpeechKeyValidatedAndSaved"));
     });
 
   return (
@@ -222,7 +238,7 @@ export const Models = () => {
       <div className="s-group">
         <div className="s-group-head">
           <div className="title-wrap">
-            <span className="title">Speech</span>
+            <span className="title">{t("speechLabel")}</span>
           </div>
           <div className="bar" />
         </div>
@@ -232,8 +248,8 @@ export const Models = () => {
             <AudioLines strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Speech model</div>
-            <div className="s-desc">Used to transcribe your speech to text.</div>
+            <div className="s-label">{t("speechModelTitle")}</div>
+            <div className="s-desc">{t("speechModelDescription")}</div>
           </div>
           <div className="s-control">
             <Dropdown<string>
@@ -271,11 +287,14 @@ export const Models = () => {
           setOpenAiKey={setOpenAiKey}
           alibabaKey={alibabaKey}
           setAlibabaKey={setAlibabaKey}
+          speechGroqKey={speechGroqKey}
+          setSpeechGroqKey={setSpeechGroqKey}
           action={action}
           saveDeepgram={saveDeepgram}
           saveGoogleSpeech={saveGoogleSpeech}
           saveOpenAi={saveOpenAi}
           saveAlibaba={saveAlibaba}
+          saveSpeechGroq={saveSpeechGroq}
         />
       </div>
 
@@ -283,7 +302,7 @@ export const Models = () => {
       <div className="s-group">
         <div className="s-group-head">
           <div className="title-wrap">
-            <span className="title">Rewrite</span>
+            <span className="title">{t("rewriteLabel")}</span>
           </div>
           <div className="bar" />
         </div>
@@ -293,8 +312,8 @@ export const Models = () => {
             <PenLine strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Rewrite model</div>
-            <div className="s-desc">Used to clean up your transcribed text.</div>
+            <div className="s-label">{t("rewriteModelTitle")}</div>
+            <div className="s-desc">{t("rewriteModelDescription")}</div>
           </div>
           <div className="s-control">
             <Dropdown<string>
@@ -357,6 +376,7 @@ function KeyRow({
   busy?: boolean;
   onSave: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="s-row">
       <div className="s-icon">
@@ -377,7 +397,7 @@ function KeyRow({
           />
           <button type="button" className="btn" onClick={onSave} disabled={busy}>
             {busy ? <Loader2 size={13} strokeWidth={2} className="animate-spin" /> : null}
-            Verify
+            {t("verifyBtnLabel")}
           </button>
         </div>
       </div>
@@ -386,14 +406,15 @@ function KeyRow({
 }
 
 function ParakeetPackage() {
+  const { t } = useI18n();
   return (
     <div className="s-row">
       <div className="s-icon">
         <FileArchive strokeWidth={2} />
       </div>
       <div className="s-body">
-        <div className="s-label">Package</div>
-        <div className="s-desc">600 MB on disk.</div>
+        <div className="s-label">{t("packageLabel")}</div>
+        <div className="s-desc">{t("parakeetSizeDesc")}</div>
       </div>
       <div className="s-control">
         <LocalModelCard modelId="parakeet-tdt-0.6b-v3-int8" />
@@ -416,20 +437,24 @@ function SpeechKeyRow(props: {
   setOpenAiKey: (v: string) => void;
   alibabaKey: string;
   setAlibabaKey: (v: string) => void;
+  speechGroqKey: string;
+  setSpeechGroqKey: (v: string) => void;
   action: string | null;
   saveDeepgram: () => Promise<void>;
   saveGoogleSpeech: () => Promise<void>;
   saveOpenAi: () => Promise<void>;
   saveAlibaba: () => Promise<void>;
+  saveSpeechGroq: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   switch (props.provider) {
     case "NVIDIA":
       return <ParakeetPackage />;
     case "Deepgram":
       return (
         <KeyRow
-          label="Deepgram API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("deepgramApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="dg_..."
           value={props.deepgramKey}
           onChange={props.setDeepgramKey}
@@ -440,8 +465,8 @@ function SpeechKeyRow(props: {
     case "OpenAI":
       return (
         <KeyRow
-          label="OpenAI API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("openAiApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="sk-..."
           value={props.openAiKey}
           onChange={props.setOpenAiKey}
@@ -452,13 +477,25 @@ function SpeechKeyRow(props: {
     case "Alibaba":
       return (
         <KeyRow
-          label="Alibaba API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("alibabaApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="sk-..."
           value={props.alibabaKey}
           onChange={props.setAlibabaKey}
           busy={props.action === "save-alibaba"}
           onSave={() => void props.saveAlibaba()}
+        />
+      );
+    case "Groq":
+      return (
+        <KeyRow
+          label={t("groqApiKeyLabel")}
+          description={t("speechGroqKeychainDesc")}
+          placeholder="gsk_..."
+          value={props.speechGroqKey}
+          onChange={props.setSpeechGroqKey}
+          busy={props.action === "save-speech-groq"}
+          onSave={() => void props.saveSpeechGroq()}
         />
       );
   }
@@ -480,14 +517,15 @@ function RewriteKeyRow(props: {
   saveOpenAi: () => Promise<void>;
   saveGroq: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   switch (props.provider) {
     case "Apple":
       return <AppleFmRow />;
     case "OpenAI":
       return (
         <KeyRow
-          label="OpenAI API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("openAiApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="sk-..."
           value={props.openAiKey}
           onChange={props.setOpenAiKey}
@@ -498,8 +536,8 @@ function RewriteKeyRow(props: {
     case "Google":
       return (
         <KeyRow
-          label="Gemini API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("geminiApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="AIza..."
           value={props.geminiKey}
           onChange={props.setGeminiKey}
@@ -510,8 +548,8 @@ function RewriteKeyRow(props: {
     case "Alibaba":
       return (
         <KeyRow
-          label="Alibaba API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("alibabaApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="sk-..."
           value={props.alibabaKey}
           onChange={props.setAlibabaKey}
@@ -522,8 +560,8 @@ function RewriteKeyRow(props: {
     case "Groq":
       return (
         <KeyRow
-          label="Groq API key"
-          description="Stored locally in your macOS Keychain."
+          label={t("groqApiKeyLabel")}
+          description={t("keychainDesc")}
           placeholder="gsk_..."
           value={props.groqKey}
           onChange={props.setGroqKey}
@@ -536,6 +574,7 @@ function RewriteKeyRow(props: {
 
 // ---- Apple FM status row ------------------------------------------------
 function AppleFmRow() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<AppleFmAvailability | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -554,7 +593,7 @@ function AppleFmRow() {
     void refresh();
   }, []);
 
-  const { headline, detail, mint } = describeAppleFmStatus(status);
+  const { headline, detail, mint } = describeAppleFmStatus(status, t);
 
   // Hide the status pill when the model is fully ready — design only
   // surfaces it when there's something the user needs to act on.
@@ -567,7 +606,7 @@ function AppleFmRow() {
       </div>
       <div className="s-body">
         <div className="s-label" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          Apple Foundation Models
+          {t("appleFmTitle")}
           {showStatusPill && (
             <span
               className="mono-label"
@@ -595,14 +634,17 @@ function AppleFmRow() {
           ) : (
             <RefreshCw size={13} strokeWidth={2} />
           )}
-          {checking ? "Checking…" : "Recheck"}
+          {checking ? t("checkingBtnLabel") : t("recheckBtnLabel")}
         </button>
       </div>
     </div>
   );
 }
 
-function describeAppleFmStatus(status: AppleFmAvailability | null): {
+function describeAppleFmStatus(
+  status: AppleFmAvailability | null,
+  t: (key: any) => string
+): {
   headline: string;
   detail: string;
   mint: boolean;
@@ -610,31 +652,33 @@ function describeAppleFmStatus(status: AppleFmAvailability | null): {
   switch (status) {
     case "available":
       return {
-        headline: "Ready",
-        detail: "Apple Intelligence must be enabled.",
+        headline: t("appleFmStatusReady"),
+        detail: t("appleFmReadyDesc"),
         mint: true,
       };
     case "unavailable":
       return {
-        headline: "Not ready",
-        detail:
-          "macOS reports the system model isn't reachable. Enable Apple Intelligence in System Settings.",
+        headline: t("appleFmStatusNotReady"),
+        detail: t("appleFmNotReadyDesc"),
         mint: false,
       };
     case "not-built":
       return {
-        headline: "Helper missing",
-        detail:
-          "The Swift helper wasn't compiled at build time (needs swiftc + macOS 26 SDK).",
+        headline: t("appleFmStatusHelperMissing"),
+        detail: t("appleFmHelperMissingDesc"),
         mint: false,
       };
     case "unsupported":
       return {
-        headline: "macOS only",
-        detail: "Apple Foundation Models is only available on macOS 26+.",
+        headline: t("appleFmStatusMacOsOnly"),
+        detail: t("appleFmUnsupportedDesc"),
         mint: false,
       };
     case null:
-      return { headline: "Checking", detail: "Probing the Foundation Models framework…", mint: false };
+      return {
+        headline: t("appleFmStatusChecking"),
+        detail: t("appleFmCheckingDesc"),
+        mint: false,
+      };
   }
 }

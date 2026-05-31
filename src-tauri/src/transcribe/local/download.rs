@@ -160,6 +160,21 @@ async fn download_to_file(
     dest: &Path,
 ) -> AppResult<()> {
     emit_progress(app, spec, "downloading", 0, None);
+
+    // Write to a sibling `.part` file first, then atomic-rename to `dest`
+    // only after the stream closes cleanly. Without this, an aborted
+    // download (process killed, network reset, etc.) leaves a half-written
+    // file at the real path — and `is_complete()` happily reports it as
+    // ready, which causes sherpa-onnx to throw a C++ exception when it
+    // tries to parse the truncated ONNX. The thrown exception crosses the
+    // FFI boundary as `__rust_foreign_exception` and abort()s the whole
+    // process. Atomic rename means a partial file never sits at the real
+    // path: `is_complete()` returns false, prewarm skips, no crash.
+    let part_path = match dest.extension().and_then(|s| s.to_str()) {
+        Some(ext) => dest.with_extension(format!("{}.part", ext)),
+        None => dest.with_extension("part"),
+    };
+
     let response = http
         .get(spec.url)
         .send()
@@ -170,7 +185,7 @@ async fn download_to_file(
 
     let total = response.content_length();
     let mut downloaded: u64 = 0;
-    let mut file = tokio::fs::File::create(dest)
+    let mut file = tokio::fs::File::create(&part_path)
         .await
         .map_err(|e| AppError::Config(format!("Create file failed: {}", e)))?;
     let mut stream = response.bytes_stream();
@@ -186,6 +201,11 @@ async fn download_to_file(
     file.flush()
         .await
         .map_err(|e| AppError::Config(format!("Flush failed: {}", e)))?;
+    drop(file);
+
+    tokio::fs::rename(&part_path, dest)
+        .await
+        .map_err(|e| AppError::Config(format!("Finalize rename failed: {}", e)))?;
     Ok(())
 }
 

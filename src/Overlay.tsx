@@ -1,108 +1,193 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { AudioLines, PenLine } from "lucide-react";
-import { getAppState, getSetting } from "./lib/commands";
+import { invoke } from "@tauri-apps/api/core";
+import { Plus, X } from "lucide-react";
+import { addVocabularyTerm, generatePhonetic } from "./lib/commands";
 
-type OverlayState = "listening" | "processing";
-type AppStatus = "idle" | "recording" | "processing";
+/**
+ * The overlay window — same NSPanel-backed pill that previously showed
+ * "Listening…" / "Rewriting…". The listening/rewriting UX was retired
+ * in favor of inline placeholders, but the window and its plumbing
+ * remain because they're the only thing we've gotten to reliably paint
+ * above a focused fullscreen app on macOS (NSPanel +
+ * FullScreenAuxiliary + setLevel:999).
+ *
+ * Today the overlay is used exclusively for the "Add 'Term' to
+ * vocabulary?" prompt.
+ *
+ * Lifecycle:
+ *   1. Backend `overlay::show_vocab(term)` stashes the term in
+ *      `PendingVocabTerm` and emits `overlay-state` = `"vocab:<term>"`.
+ *      We render the pill and arm a 15 s auto-dismiss.
+ *   2. User clicks Add → generate phonetic, persist term, show
+ *      "Added" for 1.2 s, ask backend to hide.
+ *   3. User clicks × or timer fires → ask backend to hide.
+ */
+
+type OverlayState =
+  | { kind: "vocab-ask"; term: string }
+  | { kind: "vocab-saved"; term: string }
+  | { kind: "vocab-error"; term: string; message: string };
+
+const AUTO_DISMISS_MS = 15_000;
+const POST_SAVE_HOLD_MS = 1_200;
 
 export default function Overlay() {
-  const [state, setState] = useState<OverlayState>("listening");
-  const [appLanguage, setAppLanguage] = useState("en");
+  const [state, setState] = useState<OverlayState | null>(null);
 
   useEffect(() => {
-    const unlistenState = listen<string>("overlay-state", (event) => {
-      setState(event.payload === "listening" ? "listening" : "processing");
-    });
-    const unlistenAppState = listen<string>("state-changed", (event) => {
-      const appState = event.payload as AppStatus;
-      if (appState === "recording") {
-        setState("listening");
-      } else if (appState === "processing") {
-        setState("processing");
-      } else {
-        setState("listening");
-      }
-    });
-
+    let dismissTimer: number | null = null;
     let cancelled = false;
-    const syncFromBackend = async () => {
-      try {
-        const appState = (await getAppState()) as AppStatus;
-        if (cancelled) return;
-        if (appState === "processing") {
-          setState("processing");
-        } else {
-          setState("listening");
-        }
-      } catch {
-        // Ignore transient polling errors
-      }
 
-      try {
-        const language = await getSetting("interface_language");
-        if (!cancelled) setAppLanguage(language);
-      } catch {
-        // Ignore transient polling errors
-      }
+    const armDismiss = (delayMs: number) => {
+      if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+      dismissTimer = window.setTimeout(() => {
+        void invoke("hide_vocab_prompt").catch(() => undefined);
+        setState(null);
+      }, delayMs);
     };
 
-    void syncFromBackend();
-    const interval = window.setInterval(() => {
-      void syncFromBackend();
-    }, 120);
+    const handleVocabPayload = (term: string) => {
+      if (!term) return;
+      setState({ kind: "vocab-ask", term });
+      armDismiss(AUTO_DISMISS_MS);
+      // Phonetic generation is deferred to the Add click — we don't
+      // burn an LLM call for terms the user is going to dismiss.
+    };
+
+    // Helper: drain PendingVocabTerm from the backend. Idempotent —
+    // safe to call many times; if no term is pending it just returns
+    // null and we no-op.
+    const pullPendingTerm = () => {
+      void invoke<string | null>("take_pending_vocab_term").then((term) => {
+        if (cancelled) return;
+        if (term) {
+          void invoke("frontend_ping", {
+            label: `overlay:pulled-term:${term}`,
+          }).catch(() => undefined);
+          handleVocabPayload(term);
+        }
+      });
+    };
+
+    pullPendingTerm();
+
+    // Path 1: direct JS injection from Rust. When `show_vocab` runs on
+    // the backend, it calls `WebviewWindow::eval` with
+    // `window.__vocabWake()` — synchronous, bypasses every Tauri
+    // event/messaging layer. We found Tauri events from a worker
+    // thread don't reliably reach the overlay webview, so this is
+    // the primary (fast) delivery mechanism.
+    (window as unknown as { __vocabWake?: () => void }).__vocabWake = () => {
+      pullPendingTerm();
+    };
+
+    // Path 2: polling. Every 300 ms, ask the backend if it has a
+    // term waiting. Bulletproof fallback — if eval() somehow doesn't
+    // fire either, polling will pick the term up within ~300 ms.
+    // Cost: one invoke call per 300 ms = ~3/s, trivial.
+    const pollHandle = window.setInterval(() => {
+      pullPendingTerm();
+    }, 300);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
-      unlistenState.then((fn) => fn());
-      unlistenAppState.then((fn) => fn());
+      if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+      window.clearInterval(pollHandle);
+      delete (window as unknown as { __vocabWake?: () => void }).__vocabWake;
     };
   }, []);
 
-  const isListening = state === "listening";
-  const listeningText = getOverlayText(appLanguage, "listening");
-  const processingText = getOverlayText(appLanguage, "processing");
+  const dismiss = () => {
+    void invoke("hide_vocab_prompt").catch(() => undefined);
+    setState(null);
+  };
+
+  const onAdd = async () => {
+    if (!state || state.kind !== "vocab-ask") return;
+    const { term } = state;
+    // No intermediate "Adding…" state — the pill stays in the ask
+    // state while we generate the phonetic + persist, then flips
+    // straight to "Added". The Add button gets a `data-saving`
+    // attribute so we can grey it out in CSS without changing the
+    // state machine.
+
+    // Phonetic generation happens here, on the Add click — not on
+    // pill display — so we only burn an LLM call for terms the user
+    // actually wants to keep. The phonetic shows up in the Vocabulary
+    // page in the main app; it's never shown in the pill itself.
+    let phonetic: string | null = null;
+    try {
+      phonetic = await generatePhonetic(term);
+    } catch {
+      // Optional; persist without it.
+    }
+    try {
+      await addVocabularyTerm(term, phonetic, null, "general");
+      setState({ kind: "vocab-saved", term });
+      window.setTimeout(dismiss, POST_SAVE_HOLD_MS);
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const message = /UNIQUE|already exists|duplicate/i.test(raw)
+        ? "Already in your vocabulary"
+        : raw;
+      setState({ kind: "vocab-error", term, message });
+      window.setTimeout(dismiss, POST_SAVE_HOLD_MS * 2);
+    }
+  };
+
+  if (!state) {
+    // No content → render nothing. The window is transparent, so this
+    // is invisible to the user. Same pattern as the old listening pill
+    // when it was inert.
+    return <div className="flex h-screen w-screen bg-transparent" />;
+  }
 
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent select-none">
-      <div className="pointer-events-none flex items-center gap-2 rounded-full bg-[#050505]/95 px-4 py-2">
-        <div className="shrink-0">
-          {isListening ? (
-            <AudioLines className="overlay-audio-lines h-4 w-4 text-blue-500" />
-          ) : (
-            <PenLine className="overlay-rewrite-pen h-4 w-4 text-blue-500" />
+      <div className="flex items-center gap-2 rounded-full bg-[#050505]/95 px-3 py-1.5 shadow-lg">
+        <div className="flex items-baseline gap-1.5 text-sm font-medium text-white whitespace-nowrap">
+          {state.kind === "vocab-ask" && (
+            <>
+              <span className="text-white/60">Add</span>
+              <span className="font-semibold">{state.term}</span>
+              <span className="text-white/60">to vocabulary?</span>
+            </>
+          )}
+          {state.kind === "vocab-saved" && (
+            <>
+              <span className="text-white/60">Added</span>
+              <span className="font-semibold">{state.term}</span>
+            </>
+          )}
+          {state.kind === "vocab-error" && (
+            <>
+              <span className="font-semibold">{state.term}</span>
+              <span className="text-white/60">— {state.message}</span>
+            </>
           )}
         </div>
-        <div className="min-w-0 grid">
-          <span
-            className={`col-start-1 row-start-1 text-sm font-medium text-white ${
-              isListening ? "visible" : "invisible"
-            }`}
+        <div className="ml-1 flex items-center gap-1">
+          {state.kind === "vocab-ask" && (
+            <button
+              type="button"
+              onClick={() => void onAdd()}
+              className="inline-flex items-center gap-1 rounded-full bg-blue-500/25 hover:bg-blue-500/40 border border-blue-400/40 px-2.5 py-0.5 text-xs font-medium text-blue-200 transition-colors"
+              aria-label={`Add ${state.term} to vocabulary`}
+            >
+              <Plus size={11} strokeWidth={2.5} />
+              Add
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={dismiss}
+            className="inline-grid place-items-center w-5 h-5 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Dismiss"
           >
-            {listeningText}
-          </span>
-          <span
-            className={`col-start-1 row-start-1 text-sm font-medium text-white ${
-              isListening ? "invisible" : "visible"
-            }`}
-          >
-            {processingText}
-          </span>
+            <X size={12} strokeWidth={2.5} />
+          </button>
         </div>
       </div>
     </div>
   );
-}
-
-function getOverlayText(language: string, state: OverlayState): string {
-  const text = {
-    en: { listening: "Listening...", processing: "Rewriting..." },
-    zh: { listening: "正在听取...", processing: "正在改写..." },
-    sv: { listening: "Lyssnar...", processing: "Skriver om..." },
-    fi: { listening: "Kuunnellaan...", processing: "Kirjoitetaan uudelleen..." },
-  } as const;
-
-  const lang = language as keyof typeof text;
-  return (text[lang] ?? text.en)[state];
 }

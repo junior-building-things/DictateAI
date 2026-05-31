@@ -24,10 +24,12 @@ pub struct AppState {
     /// the cache is invalidated when the user switches between e.g. Llama 3.2
     /// and Gemma 3.
     pub local_llm: Mutex<Option<(String, Arc<LocalLlmEngine>)>>,
-    /// Length (in chars) of a "Listening..." placeholder that the hotkey
-    /// handler typed into the focused text field at recording-start. Consumed
-    /// by the pipeline deliver step (replaced with the final rewrite) or the
-    /// pipeline outer cleanup (deleted on failure / empty rewrite).
+    /// Grapheme-count of the placeholder emoji (🎙️ at record-start, swapped
+    /// to ✏️ on hotkey release) that the handler typed into the focused
+    /// text field. Consumed by the pipeline deliver step (replaced with the
+    /// final rewrite) or the pipeline outer cleanup (deleted on failure /
+    /// empty rewrite). Always 1 in practice — kept as a usize for future
+    /// flexibility if we go back to a multi-grapheme placeholder.
     pub pending_placeholder: Mutex<Option<usize>>,
 }
 

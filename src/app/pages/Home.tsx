@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Accessibility,
+  BookText,
   Check,
   ClipboardPaste,
   Hand,
@@ -72,37 +73,87 @@ export const Home = () => {
   const captureHotkey = () => {
     setRecording(true);
     toast.info(t("pressShortcutToast"));
-    const handler = (event: KeyboardEvent) => {
+
+    // Tracks a pending bare-modifier press so we can distinguish "user
+    // tapped right-Option to use it alone as the hotkey" from "user
+    // pressed right-Option as part of a combo and will hit a key next".
+    // Only right-Option is supported as a modifier-only hotkey; left-Option
+    // is needed for character input (option-L → ¬, etc.) so we don't offer
+    // it as a binding.
+    let modifierOnlyCandidate: string | null = null;
+
+    const commit = (hotkey: string) => {
+      void setHotkeySettings({ hotkey });
+      toast.info(t("hotkeyUpdatedToast"));
+      cleanup();
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       const parts: string[] = [];
       if (event.metaKey || event.ctrlKey) parts.push("⌘");
       if (event.altKey) parts.push("⌥");
       if (event.shiftKey) parts.push("Shift");
       const keyToken = formatHotkeyToken(event.code, event.key);
-      if (!keyToken || parts.length === 0) return;
+
+      if (!keyToken) {
+        // Bare modifier press. Mark right-Option as a candidate and wait
+        // for its keyup to confirm the user wants it alone.
+        if (event.code === "AltRight" && parts.length === 1 && parts[0] === "⌥") {
+          modifierOnlyCandidate = "Right Option";
+        }
+        return;
+      }
+
+      // Regular key pressed — drop any modifier-only candidate and commit
+      // the combo as before. parts.length === 0 means "no modifier held,
+      // user pressed a bare letter" which we still reject as ambiguous.
+      modifierOnlyCandidate = null;
+      if (parts.length === 0) return;
       parts.push(keyToken);
-      void setHotkeySettings({ hotkey: parts.join(" + ") });
-      toast.info(t("hotkeyUpdatedToast"));
-      cleanup();
+      commit(parts.join(" + "));
     };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      // User released right-Option without pressing anything else →
+      // commit the modifier-only binding.
+      if (modifierOnlyCandidate && event.code === "AltRight") {
+        commit(modifierOnlyCandidate);
+        return;
+      }
+      // Any other keyup voids the candidate (e.g. user released right-
+      // Option but pressed Cmd+A immediately after — that's a combo).
+      if (event.code !== "AltRight") {
+        modifierOnlyCandidate = null;
+      }
+    };
+
     const cleanup = () => {
-      window.removeEventListener("keydown", handler);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
       setRecording(false);
     };
-    window.addEventListener("keydown", handler);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
     timeoutRef.current = window.setTimeout(cleanup, 5000);
   };
 
   const micGranted = micPerm === "granted";
   const axGranted = axEnabled === true;
-  const hotkeyTokens = hotkeySettings.hotkey
-    .split("+")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // "Right Option" is a special sentinel for the modifier-only macOS path;
+  // display it as the single ⌥R token rather than trying to split on "+".
+  const isRightOption = hotkeySettings.hotkey.trim().toLowerCase() === "right option";
+  const hotkeyTokens = isRightOption
+    ? ["⌥R"]
+    : hotkeySettings.hotkey
+        .split("+")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
   return (
     <div>
@@ -110,7 +161,7 @@ export const Home = () => {
       <div className="s-group">
         <div className="s-group-head">
           <div className="title-wrap">
-            <span className="title">Permissions</span>
+            <span className="title">{t("permissionsTitle")}</span>
           </div>
           <div className="bar" />
         </div>
@@ -120,8 +171,8 @@ export const Home = () => {
             <Mic strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Microphone</div>
-            <div className="s-desc">Allow DictateAI to use your microphone for dictation.</div>
+            <div className="s-label">{t("microphoneLabel")}</div>
+            <div className="s-desc">{t("micPermissionDesc")}</div>
           </div>
           <div className="s-control">
             <PermissionAction granted={micGranted} onGrant={() => void grant("mic")} />
@@ -133,8 +184,8 @@ export const Home = () => {
             <Accessibility strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Accessibility</div>
-            <div className="s-desc">Allow DictateAI to use accessibility settings for auto-paste.</div>
+            <div className="s-label">{t("accessibilityLabel")}</div>
+            <div className="s-desc">{t("accessibilityPermissionDesc")}</div>
           </div>
           <div className="s-control">
             <PermissionAction granted={axGranted} onGrant={() => void grant("ax")} />
@@ -146,7 +197,7 @@ export const Home = () => {
       <div className="s-group">
         <div className="s-group-head">
           <div className="title-wrap">
-            <span className="title">Preferences</span>
+            <span className="title">{t("preferencesTitle")}</span>
           </div>
           <div className="bar" />
         </div>
@@ -156,8 +207,8 @@ export const Home = () => {
             <Keyboard strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Global hotkey</div>
-            <div className="s-desc">Set the hotkey that triggers DictateAI.</div>
+            <div className="s-label">{t("globalHotkey")}</div>
+            <div className="s-desc">{t("hotkeySectionDescription")}</div>
           </div>
           <div className="s-control">
             <div className="field-row">
@@ -177,7 +228,7 @@ export const Home = () => {
                 className="btn"
               >
                 <Pencil strokeWidth={2} />
-                {recording ? "Press keys…" : "Change"}
+                {recording ? t("pressKeysLabel") : t("changeLabel")}
               </button>
             </div>
           </div>
@@ -188,18 +239,18 @@ export const Home = () => {
             <Hand strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Trigger mode</div>
-            <div className="s-desc">Choose how to trigger the hotkey.</div>
+            <div className="s-label">{t("triggerModeLabel")}</div>
+            <div className="s-desc">{t("triggerModeDesc")}</div>
           </div>
           <div className="s-control">
-            <div className="hero-mode" role="group" aria-label="Trigger mode">
+            <div className="hero-mode" role="group" aria-label={t("triggerModeLabel") || "Trigger mode"}>
               <button
                 type="button"
                 className={hotkeySettings.mode === "hold" ? "active" : ""}
                 onClick={() => void setHotkeySettings({ mode: "hold" })}
               >
                 <Hand strokeWidth={2} />
-                <span>Hold</span>
+                <span>{t("holdLabel")}</span>
               </button>
               <button
                 type="button"
@@ -207,7 +258,7 @@ export const Home = () => {
                 onClick={() => void setHotkeySettings({ mode: "toggle" })}
               >
                 <MousePointerClick strokeWidth={2} />
-                <span>Tap</span>
+                <span>{t("tapLabel")}</span>
               </button>
             </div>
           </div>
@@ -218,8 +269,8 @@ export const Home = () => {
             <ClipboardPaste strokeWidth={2} />
           </div>
           <div className="s-body">
-            <div className="s-label">Auto-paste</div>
-            <div className="s-desc">Paste the rewritten text into the focused app when dictation ends.</div>
+            <div className="s-label">{t("autoPaste")}</div>
+            <div className="s-desc">{t("autoPasteSettingDescription")}</div>
           </div>
           <div className="s-control">
             <button
@@ -234,24 +285,53 @@ export const Home = () => {
             />
           </div>
         </div>
+
+        <div className="s-row">
+          <div className="s-icon">
+            <BookText strokeWidth={2} />
+          </div>
+          <div className="s-body">
+            <div className="s-label">Auto-add vocabulary</div>
+            <div className="s-desc">
+              When you edit a dictation, offer to add new proper nouns to your vocabulary.
+            </div>
+          </div>
+          <div className="s-control">
+            <button
+              type="button"
+              aria-pressed={hotkeySettings.autoAddVocabulary}
+              className={`toggle ${hotkeySettings.autoAddVocabulary ? "on" : ""}`}
+              onClick={() => {
+                const next = !hotkeySettings.autoAddVocabulary;
+                void setHotkeySettings({ autoAddVocabulary: next });
+                toast.info(
+                  next
+                    ? "Auto-add vocabulary on. We'll prompt for new terms after edits."
+                    : "Auto-add vocabulary off. No more prompts after edits.",
+                );
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
 function PermissionAction({ granted, onGrant }: { granted: boolean; onGrant: () => void }) {
+  const { t } = useI18n();
   if (granted) {
     return (
       <button type="button" className="btn btn-static">
         <Check strokeWidth={2} />
-        Enabled
+        {t("permissionEnabledDescription")}
       </button>
     );
   }
   return (
     <button type="button" className="btn btn-ai" onClick={onGrant}>
       <Lock strokeWidth={2} />
-      Action needed
+      {t("actionNeededLabel")}
     </button>
   );
 }

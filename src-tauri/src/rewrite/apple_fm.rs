@@ -78,7 +78,7 @@ pub async fn check_availability() -> Availability {
     }
 }
 
-pub async fn rewrite(system: &str, user: &str) -> AppResult<String> {
+pub async fn rewrite(system: &str, user: &str) -> AppResult<crate::rewrite::RewriteOutcome> {
     let path = helper_path()?;
     let input_json = serde_json::to_vec(&Input { system, user })?;
 
@@ -118,5 +118,7 @@ pub async fn rewrite(system: &str, user: &str) -> AppResult<String> {
         )));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(crate::rewrite::RewriteOutcome::local(
+        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+    ))
 }
