@@ -15,8 +15,6 @@ import {
   validateOpenAiApiKey,
 } from "../../lib/commands";
 import {
-  defaultRewriteModel,
-  defaultSpeechModel,
   getRewriteModelOptions,
   getSpeechModelOptions,
   rewriteProviderOptions,

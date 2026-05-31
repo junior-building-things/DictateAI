@@ -161,7 +161,7 @@ export const Vocabulary = () => {
         </div>
       ) : sortedTerms.length === 0 ? (
         <div className="empty">
-          <p>{t("noVocabularyTerms") ?? "No vocabulary terms yet."}</p>
+          <p>{t("noVocabularyTermsYet")}</p>
         </div>
       ) : (
         <>
