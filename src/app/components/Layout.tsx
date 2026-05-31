@@ -4,7 +4,6 @@ import {
   BookText,
   History as HistoryIcon,
   Home as HomeIcon,
-  LogOut,
   Moon,
   Settings as SettingsIcon,
   Sun,
@@ -142,38 +141,6 @@ const LayoutInner = () => {
               </NavLink>
             ))}
           </nav>
-
-          {/* Footer: just the user / log-out row. */}
-          <div
-            className="relative mt-auto border-t pt-3"
-            style={{ borderColor: "var(--hairline)" }}
-          >
-            <div className="flex items-center gap-2.5 px-1.5">
-              <div
-                className="grid size-[26px] shrink-0 place-items-center rounded-full text-[10px] font-semibold"
-                style={{
-                  background:
-                    "linear-gradient(135deg, oklch(0.74 0.14 295), oklch(0.82 0.14 188))",
-                  color: "var(--bg)",
-                }}
-              >
-                YL
-              </div>
-              <div>
-                <div className="text-[12px]" style={{ color: "var(--text)" }}>
-                  Yifan Liu
-                </div>
-                <button
-                  type="button"
-                  className="mono-label mt-px inline-flex items-center gap-1.5 transition-colors hover:!text-[var(--text)]"
-                  style={{ fontSize: "10px", letterSpacing: "0.06em", color: "var(--text-dim)" }}
-                >
-                  <LogOut className="size-[10px]" strokeWidth={2} />
-                  Log out
-                </button>
-              </div>
-            </div>
-          </div>
         </aside>
 
         {/* ============ Main ============ */}
