@@ -1,0 +1,5 @@
+# build.rs re-signs binaries/apple-fm-helper on every build, which mutates the
+# file in place. Without this ignore the `tauri dev` file-watcher sees that
+# change and restarts the app, which rebuilds and re-signs again — an infinite
+# restart loop. The helper is a build output, not a watched source input.
+binaries/
