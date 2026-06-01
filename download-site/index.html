@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
     <div class="bg-grid" aria-hidden="true"></div>
 
     <!-- ====================== Nav ====================== -->
@@ -55,7 +56,7 @@
         </div>
 
         <!-- Hero visual: the recording overlay + a freshly-pasted line -->
-        <div class="hero-stage reveal">
+        <div class="hero-stage reveal" id="heroStage">
           <div class="stage-glow" aria-hidden="true"></div>
           <div class="overlay-pill" role="img" aria-label="DictateAI listening overlay">
             <span class="pill-dot"></span>
@@ -65,7 +66,7 @@
             </div>
             <span class="pill-label">Listening…</span>
           </div>
-          <div class="paste-card">
+          <div class="paste-card tilt">
             <div class="paste-head mono-label">
               <span class="paste-dot"></span> Pasted into your active app
             </div>
@@ -125,7 +126,7 @@
           </ul>
         </div>
         <div class="feature-visual reveal">
-          <div class="hotkey-demo">
+          <div class="hotkey-demo tilt">
             <div class="keycaps">
               <kbd class="cap">⌃</kbd><kbd class="cap">⇧</kbd><kbd class="cap wide">Space</kbd>
             </div>
@@ -134,7 +135,8 @@
               <span></span><span></span><span></span><span></span><span></span>
             </div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
-            <div class="mini-paste">“Schedule the sync for Thursday at 10.”</div>
+            <p class="mini-paste" id="demoOut" data-text="Schedule the sync for Thursday at 10.">Schedule the sync for Thursday at 10.</p>
+            <button class="try-btn" id="tryBtn" type="button">▶&nbsp;&nbsp;Try it</button>
           </div>
         </div>
       </section>
@@ -156,15 +158,20 @@
           </ul>
         </div>
         <div class="feature-visual reveal">
-          <div class="rewrite-card">
+          <div class="rewrite-card tilt" id="rewriteCard">
             <div class="rw-row raw">
               <span class="rw-tag mono-label">Heard</span>
               <p>um so like i think we should uh ship it ship it tonight you know</p>
             </div>
-            <div class="rw-divider"><span>cleaned up</span></div>
-            <div class="rw-row clean">
-              <span class="rw-tag mono-label">Written</span>
-              <p>I think we should ship it tonight.</p>
+            <button class="clean-btn" id="cleanBtn" type="button">Clean it up ✨</button>
+            <div class="rw-reveal">
+              <div class="rw-reveal-inner">
+                <div class="rw-divider"><span>cleaned up</span></div>
+                <div class="rw-row clean">
+                  <span class="rw-tag mono-label">Written</span>
+                  <p>I think we should ship it tonight.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
