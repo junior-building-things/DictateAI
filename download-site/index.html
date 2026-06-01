@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DictateAI for macOS</title>
+    <title>DictateAI — Push-to-talk dictation for macOS</title>
     <meta
       name="description"
-      content="Download DictateAI for Apple Silicon Macs. A fast hotkey-driven speech capture app for instant transcription and paste."
+      content="DictateAI turns your voice into clean, ready-to-send writing. Hold a hotkey, speak, and the transcript is cleaned up and pasted instantly. On-device, private, and provider-agnostic. For Apple Silicon Macs."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -18,58 +18,258 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="page-shell">
-      <header class="topbar">
-        <div class="brand-lockup">
-          <img class="brand-icon" src="./assets/icon.png" alt="DictateAI icon" />
-          <div>
-            <h1>DictateAI</h1>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <!-- ====================== Nav ====================== -->
+    <header class="nav" id="nav">
+      <a class="nav-brand" href="#top" aria-label="DictateAI home">
+        <img class="nav-icon" src="./assets/icon.png" alt="" />
+        <span>DictateAI</span>
+      </a>
+      <a class="nav-download" href="#download">Download</a>
+    </header>
+
+    <main id="top">
+      <!-- ====================== Hero ====================== -->
+      <section class="hero">
+        <div class="hero-copy reveal">
+          <p class="eyebrow mono-label">Push-to-talk dictation · macOS</p>
+          <h1>
+            <span class="script">Your voice,</span><br />Perfectly written.
+          </h1>
+          <p class="lede">
+            Hold a hotkey, speak, release. DictateAI transcribes you, cleans it
+            up, and pastes the result into whatever you're working in — instantly.
+          </p>
+          <div class="cta-row">
+            <a
+              class="btn-primary"
+              href="./downloads/DictateAI-latest-aarch64.dmg"
+              download="DictateAI-latest-aarch64.dmg"
+            >
+              Download for Apple Silicon
+            </a>
+            <span class="cta-meta mono-label">Free · On-device · Apple Silicon</span>
+          </div>
+          <p class="version-pill">Version 1.0.11</p>
+        </div>
+
+        <!-- Hero visual: the recording overlay + a freshly-pasted line -->
+        <div class="hero-stage reveal">
+          <div class="stage-glow" aria-hidden="true"></div>
+          <div class="overlay-pill" role="img" aria-label="DictateAI listening overlay">
+            <span class="pill-dot"></span>
+            <div class="eq" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span>
+            </div>
+            <span class="pill-label">Listening…</span>
+          </div>
+          <div class="paste-card">
+            <div class="paste-head mono-label">
+              <span class="paste-dot"></span> Pasted into your active app
+            </div>
+            <p class="paste-text">
+              Let's ship the release tonight — I'll cut the tag and notify the team.
+            </p>
           </div>
         </div>
-      </header>
+      </section>
 
-      <main>
-        <section class="hero-panel">
-          <div class="hero-copy">
-            <h2><span class="hero-pretitle">Your voice,</span><br />Perfectly written.</h2>
-            <p class="hero-text">
-              Turn your voice into clean, ready-to-send writing with full control
-              over model selection and prompt customization.
-            </p>
-
-            <div class="cta-row">
-              <a
-                class="primary-link"
-                href="./downloads/DictateAI-latest-aarch64.dmg"
-                download="DictateAI-latest-aarch64.dmg"
-              >
-                Download for Apple Silicon
-              </a>
-            </div>
-
-            <p class="version-pill">Version 1.0.11</p>
+      <!-- ====================== Principles strip ====================== -->
+      <section class="principles">
+        <article class="principle reveal">
+          <div class="p-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" /></svg>
           </div>
-        </section>
+          <h3>Instant</h3>
+          <p>Engines pre-warm at launch so hotkey-release to pasted text feels like typing.</p>
+        </article>
+        <article class="principle reveal">
+          <div class="p-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" /></svg>
+          </div>
+          <h3>On-device</h3>
+          <p>Local Parakeet speech and Apple Foundation Models run offline at zero per-use cost.</p>
+        </article>
+        <article class="principle reveal">
+          <div class="p-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+          </div>
+          <h3>Private</h3>
+          <p>Your audio and history stay on your Mac in a local SQLite database. No account.</p>
+        </article>
+        <article class="principle reveal">
+          <div class="p-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></svg>
+          </div>
+          <h3>Yours to tune</h3>
+          <p>Swap speech and rewrite providers, set vocabulary, and shape the cleanup rules.</p>
+        </article>
+      </section>
 
-        <section class="feature-grid">
-          <article class="info-card" id="install">
-            <p class="section-label">How to install:</p>
-            <ol>
-              <li>Download and drag DictateAI into Applications.</li>
-              <li>Open DictateAI to get started.</li>
-            </ol>
-          </article>
+      <!-- ====================== Feature: push-to-talk ====================== -->
+      <section class="feature">
+        <div class="feature-text reveal">
+          <p class="section-label mono-label">Push-to-talk</p>
+          <h2>Hold. Speak. Done.</h2>
+          <p>
+            Press your global hotkey from any app and start talking. A rolling
+            pre-roll buffer means the start of your sentence is never clipped.
+            Release, and the text lands right where your cursor is.
+          </p>
+          <ul class="checks">
+            <li>Global hotkey works everywhere — default <kbd>⌃⇧Space</kbd> or Right&nbsp;Option</li>
+            <li>Hold-to-talk or toggle mode</li>
+            <li>Live overlay shows partial transcripts as you speak</li>
+          </ul>
+        </div>
+        <div class="feature-visual reveal">
+          <div class="hotkey-demo">
+            <div class="keycaps">
+              <kbd class="cap">⌃</kbd><kbd class="cap">⇧</kbd><kbd class="cap wide">Space</kbd>
+            </div>
+            <div class="eq big" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="mini-paste">“Schedule the sync for Thursday at 10.”</div>
+          </div>
+        </div>
+      </section>
 
-          <article class="info-card">
-            <p class="section-label">How to use:</p>
-            <ol>
-              <li>Enable microphone and accessibility permissions.</li>
-              <li>Choose your model and add API keys (if applicable).</li>
-              <li>Start dictating🎉</li>
-            </ol>
-          </article>
-        </section>
-      </main>
-    </div>
+      <!-- ====================== Feature: rewrite ====================== -->
+      <section class="feature reverse">
+        <div class="feature-text reveal">
+          <p class="section-label mono-label">Rewrite, not rephrase</p>
+          <h2>Cleanup that respects your words.</h2>
+          <p>
+            A small language model removes filler, false starts, and stray
+            “um”s, then adds punctuation — without paraphrasing or editorializing.
+            What you meant, written cleanly.
+          </p>
+          <ul class="checks">
+            <li>Strips fillers, repeats, and self-corrections</li>
+            <li>Adds punctuation and casing</li>
+            <li>Never wraps your text in quotes or commentary</li>
+          </ul>
+        </div>
+        <div class="feature-visual reveal">
+          <div class="rewrite-card">
+            <div class="rw-row raw">
+              <span class="rw-tag mono-label">Heard</span>
+              <p>um so like i think we should uh ship it ship it tonight you know</p>
+            </div>
+            <div class="rw-divider"><span>cleaned up</span></div>
+            <div class="rw-row clean">
+              <span class="rw-tag mono-label">Written</span>
+              <p>I think we should ship it tonight.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================== Feature: vocabulary ====================== -->
+      <section class="feature">
+        <div class="feature-text reveal">
+          <p class="section-label mono-label">Vocabulary</p>
+          <h2>Your names, spelled right.</h2>
+          <p>
+            Teach DictateAI the proper nouns, jargon, and phrase mappings it
+            should always get correct — so teammates, products, and acronyms
+            never come out garbled.
+          </p>
+        </div>
+        <div class="feature-visual reveal">
+          <div class="vocab-cloud">
+            <span class="chip">Kubernetes</span>
+            <span class="chip accent">Anthropic</span>
+            <span class="chip">Parakeet</span>
+            <span class="chip">OAuth</span>
+            <span class="chip accent">Tauri</span>
+            <span class="chip">gRPC</span>
+            <span class="chip">DictateAI</span>
+            <span class="chip accent">Xochitl</span>
+            <span class="chip">PostgreSQL</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================== Providers ====================== -->
+      <section class="providers reveal">
+        <p class="section-label mono-label center">Provider-agnostic</p>
+        <h2 class="center">Bring your own intelligence.</h2>
+        <p class="providers-lede">
+          Speech and rewrite are independent, swappable engines. Run fully
+          on-device, or plug in the cloud provider you prefer.
+        </p>
+        <div class="provider-grid">
+          <span class="provider-chip">Apple&nbsp;Foundation</span>
+          <span class="provider-chip"><img src="./assets/open-ai.png" alt="" />OpenAI</span>
+          <span class="provider-chip"><img src="./assets/gemini.png" alt="" />Gemini</span>
+          <span class="provider-chip">Groq</span>
+          <span class="provider-chip">Deepgram</span>
+          <span class="provider-chip">NVIDIA&nbsp;Parakeet</span>
+          <span class="provider-chip">Alibaba</span>
+          <span class="provider-chip">llama.cpp</span>
+        </div>
+      </section>
+
+      <!-- ====================== How it works ====================== -->
+      <section class="steps">
+        <p class="section-label mono-label center">How it works</p>
+        <h2 class="center">Three moves, no menus.</h2>
+        <div class="step-row">
+          <div class="step reveal">
+            <span class="step-num">1</span>
+            <h3>Hold the hotkey</h3>
+            <p>From any app, press and hold to start capturing your mic.</p>
+          </div>
+          <div class="step reveal">
+            <span class="step-num">2</span>
+            <h3>Speak naturally</h3>
+            <p>Talk as you think. Watch partials stream into the overlay.</p>
+          </div>
+          <div class="step reveal">
+            <span class="step-num">3</span>
+            <h3>Release to paste</h3>
+            <p>Cleaned text is pasted, copied to your clipboard, and saved to history.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================== Download ====================== -->
+      <section class="download" id="download">
+        <div class="download-inner reveal">
+          <img class="download-icon" src="./assets/icon.png" alt="" />
+          <h2>Start dictating🎉</h2>
+          <p>Free, on-device, and built for Apple Silicon.</p>
+          <a
+            class="btn-primary big"
+            href="./downloads/DictateAI-latest-aarch64.dmg"
+            download="DictateAI-latest-aarch64.dmg"
+          >
+            Download for Apple Silicon
+          </a>
+          <p class="version-pill">Version 1.0.11</p>
+          <ol class="install-steps">
+            <li>Download and drag DictateAI into Applications.</li>
+            <li>Open DictateAI and grant microphone &amp; accessibility access.</li>
+            <li>Choose your model, add API keys (if applicable), and start dictating.</li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <img src="./assets/icon.png" alt="" />
+        <span>DictateAI</span>
+      </div>
+      <p class="footer-note mono-label">Runs on-device · Your voice never leaves your Mac unless you choose a cloud model</p>
+    </footer>
+
+    <script src="./script.js" defer></script>
   </body>
 </html>
