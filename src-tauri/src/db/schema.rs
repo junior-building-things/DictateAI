@@ -82,7 +82,13 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             ('auto_paste', 'true'),
             ('auto_add_vocabulary', 'true'),
             ('sound_enabled', 'true'),
-            ('max_recording_seconds', '120');
+            ('max_recording_seconds', '1200');
+
+        -- Bump the old 2-minute cap to 20 minutes for existing installs.
+        -- There's no UI for this key, so a stored '120' is always the prior
+        -- default rather than a deliberate user choice.
+        UPDATE settings SET value = '1200'
+            WHERE key = 'max_recording_seconds' AND value = '120';
 
         UPDATE settings SET value = 'OpenAI'
             WHERE key = 'speech_provider'

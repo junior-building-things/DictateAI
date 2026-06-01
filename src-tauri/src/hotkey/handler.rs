@@ -55,10 +55,12 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
     };
     let _ = mode_resolution;
 
-    // Record press time
+    // Record press time. `press_instant` also serves as a recording-session
+    // id for the max-duration auto-stop timer below.
+    let press_instant = Instant::now();
     {
         let mut press_time = hotkey_state.press_time.lock().unwrap();
-        *press_time = Some(Instant::now());
+        *press_time = Some(press_instant);
     }
 
     // Set state to recording
@@ -84,6 +86,12 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
         }
         return;
     }
+
+    // Auto-stop at the configured maximum duration so long recordings are
+    // captured-and-transcribed rather than discarded on release. Scheduled
+    // before the mode-dependent placeholder block below, which can return
+    // early in hold mode.
+    schedule_max_duration_autostop(app, app_state, press_instant);
 
     // Type the 🎙️ recording placeholder into the focused field if
     // auto-paste is on. On hotkey release we swap it for ✏️ (processing),
@@ -166,30 +174,6 @@ pub fn on_released(
             cleanup_placeholder(app_state);
             // Still need to stop the stream
             let _ = hotkey_state.audio_capture.stop();
-            return None;
-        }
-
-        let max_duration_ms = max_recording_duration_ms(app_state);
-        if dur > max_duration_ms {
-            log::warn!(
-                "Recording exceeded max duration ({}ms > {}ms), discarding",
-                dur,
-                max_duration_ms
-            );
-            app_state.set_state(STATE_IDLE);
-            cleanup_placeholder(app_state);
-            let _ = hotkey_state.audio_capture.stop();
-            let _ = tauri::Emitter::emit(
-                app,
-                "pipeline-error",
-                format!(
-                    "Recording exceeded maximum duration ({:.0}s).",
-                    max_duration_ms as f64 / 1000.0
-                ),
-            );
-            if sound_enabled(app_state) {
-                let _ = feedback::play_error();
-            }
             return None;
         }
     }
@@ -334,5 +318,60 @@ fn max_recording_duration_ms(app_state: &AppState) -> u128 {
         .and_then(|v| v.parse::<u128>().ok())
         .filter(|v| *v > 0)
         .map(|v| v * 1000)
-        .unwrap_or(120_000)
+        .unwrap_or(1_200_000)
+}
+
+/// Spawn a timer that stops the active recording once it reaches the
+/// configured maximum duration, then runs it through the pipeline (rather
+/// than discarding it). `session` is the recording's press timestamp; the
+/// timer no-ops unless that same recording is still active when it fires, so
+/// a stale timer can never stop a later recording.
+fn schedule_max_duration_autostop(app: &AppHandle, app_state: &AppState, session: Instant) {
+    let max_ms = max_recording_duration_ms(app_state) as u64;
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(max_ms)).await;
+
+        // Resolve the stop inside a scope so the (non-Send) `State` guards are
+        // dropped before the `.await` below — only the owned audio crosses it.
+        let audio = {
+            let app_state = app.state::<AppState>();
+            let hotkey_state = app.state::<HotkeyState>();
+            let same_session = *hotkey_state.press_time.lock().unwrap() == Some(session);
+            if !app_state.is_recording() || !same_session {
+                return;
+            }
+            log::info!(
+                "Recording reached max duration ({}s); auto-stopping.",
+                max_ms / 1000
+            );
+            if sound_enabled(&app_state) {
+                let _ = feedback::play_stop();
+            }
+            match hotkey_state.audio_capture.stop() {
+                Ok(audio) if !audio.is_empty() => {
+                    log::info!("Auto-stop captured {} audio samples", audio.len());
+                    app_state.set_state(STATE_PROCESSING);
+                    let _ = tauri::Emitter::emit(&app, "state-changed", "processing");
+                    audio
+                }
+                Ok(_) => {
+                    log::warn!("Auto-stop: no audio captured");
+                    app_state.set_state(STATE_IDLE);
+                    let _ = tauri::Emitter::emit(&app, "state-changed", "idle");
+                    cleanup_placeholder(&app_state);
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Auto-stop: failed to stop recording: {}", e);
+                    app_state.set_state(STATE_IDLE);
+                    let _ = tauri::Emitter::emit(&app, "state-changed", "idle");
+                    cleanup_placeholder(&app_state);
+                    return;
+                }
+            }
+        };
+
+        finalize_recording(app, audio).await;
+    });
 }

@@ -18,8 +18,8 @@ use crate::state::{AppState, STATE_IDLE, STATE_PROCESSING};
 use crate::transcribe::api::{self as speech_api, SpeechApiSettings};
 use crate::transcribe::local::parakeet::{ParakeetEngine, ParakeetModelPaths};
 
-const API_SPEECH_TIMEOUT_SECONDS: u64 = 8;
-const API_REWRITE_TIMEOUT_SECONDS: u64 = 10;
+const API_SPEECH_TIMEOUT_SECONDS: u64 = 15;
+const API_REWRITE_TIMEOUT_SECONDS: u64 = 15;
 
 pub async fn run(app: AppHandle, audio_data: Vec<f32>) -> AppResult<()> {
     let state = app.state::<AppState>();
