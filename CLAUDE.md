@@ -99,71 +99,45 @@ App data directory holds `dictate-ai.db` (SQLite) with tables: `settings`, `voca
 DictateAI uses Tauri's updater. Installed apps check GitHub Releases (`junior-building-things/DictateAI`) `latest.json` on launch, download in the background, and apply on next open. Initial install is from the website DMG.
 
 **To publish an update:**
-1. Bump the version in **all four**: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src/lib/i18n.tsx`.
+1. Bump the version in **all four**: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src/lib/i18n.tsx` (which repeats it once per locale block — bump every occurrence).
 2. Commit and push.
 3. Create and push a git tag like `v1.0.12`.
 4. `.github/workflows/release.yml` builds the macOS bundle + DMG, packages and signs `DictateAI.app.tar.gz` with `tauri signer`, and uploads `latest.json`.
 
 The updater private key is in GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY` (the public key is embedded in the app).
 
+**One version, one binary.** Never let two different builds share a version number — bump before rebuilding, even for a throwaway local build. Otherwise the DMG on the download site, the CI-built release, and whatever is on your machine all claim the same version while differing.
+
+**Always build with the Developer ID identity.** Without it Tauri falls back to ad-hoc signing, which
+breaks two things that are keyed to code identity: the Keychain ACL on the stored API keys (macOS raises
+the alarming "DictateAI wants to use your confidential information" dialog), and the TCC grants for
+Microphone / Accessibility (they have to be given again after every install). Ad-hoc identity also changes
+on every rebuild, so "Always Allow" never sticks.
+
+```bash
+APPLE_SIGNING_IDENTITY="Developer ID Application: Thomas Oefverstroem (Q2V7263T69)" npm run tauri build
+```
+
+Check any build before handing it out — `Signature=adhoc` means it went out wrong:
+
+```bash
+codesign -dvvv src-tauri/target/release/bundle/macos/DictateAI.app 2>&1 | grep -E "Authority|Signature"
+```
+
+A public release must never ship ad-hoc or under a different Team ID: the Keychain ACL is bound to the
+signing identity, so existing users would all get that dialog on first launch after the update. Renewing
+the Developer ID cert is safe (Team ID stays `Q2V7263T69`); switching Apple accounts is not.
+
+**Local builds are signed but not notarized.** With the identity above, Gatekeeper accepts the app when it's installed from a local path and code identity stays stable, so Keychain and TCC grants persist. Notarization is separate and only matters for a DMG people download — an un-notarized DMG fetched over the internet still gets quarantined. Settings and history live in the app data dir, not the bundle, so they survive any reinstall.
+
 ---
 
 ## How Claude Should Work on This Codebase
 
-### 1. Think Before Coding
-Don't assume. Don't hide confusion. Surface tradeoffs.
+The general working rules — think before coding, simplicity first, surgical changes, goal-driven
+execution — live in `~/.claude/CLAUDE.md` and apply here. Only the repo-specific rule below is local.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them — don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 2. Simplicity First
-Minimum code that solves the problem. Nothing speculative.
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-Touch only what you must. Clean up only your own mess.
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it — don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-Define success criteria. Loop until verified.
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-### 5. Commits, Pushes, and Releases
+### Commits, Pushes, and Releases
 This is an installed desktop app, not an auto-deployed web app — **do not commit or push unless the user asks.** Work on the current branch; don't switch or rename branches without being told.
 
 When you do ship a version, follow the release checklist above: bump the version in all four files, then tag `vX.Y.Z` to trigger the GitHub Actions release. Never push a tag without the user's go-ahead — it publishes an update to every installed app.
