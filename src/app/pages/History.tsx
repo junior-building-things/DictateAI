@@ -55,7 +55,7 @@ export const History = () => {
       // Async + best-effort; failures (already-in-vocab UNIQUE collisions,
       // backend errors) are swallowed so we never block the user's edit flow.
       if (hotkeySettings.autoAddVocabulary) {
-        learnNewVocabTerms(original, next);
+        void learnNewVocabTerms(original, next);
       }
     }
     setEditingId(null);
