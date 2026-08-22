@@ -5,7 +5,6 @@ mod commands;
 mod db;
 mod error;
 mod hotkey;
-mod overlay;
 mod paste;
 mod pipeline;
 mod pricing;
@@ -166,9 +165,6 @@ pub fn run() {
             let hotkey_state = HotkeyState::new().expect("Failed to create hotkey state");
             app.manage(hotkey_state);
 
-            // Shared "next term to display in the overlay's vocab-prompt
-            // mode" bucket — see `overlay::PendingVocabTerm` for the why.
-            app.manage(overlay::PendingVocabTerm::default());
 
             // Right-Option monitor is managed even when not currently in
             // use — `update_hotkey` can start it at runtime if the user
@@ -235,31 +231,6 @@ pub fn run() {
             // app keeps starting normally if this is slow.
             pipeline::prewarm(handle.clone());
 
-            // Overlay window must be declared `visible: true` in
-            // tauri.conf.json — on this Tauri 2 + macOS combo, a
-            // `visible: false` window never attaches its WKWebView, so
-            // React never mounts, `take_pending_vocab_term` is never
-            // called, and the pill never renders no matter how many
-            // `window.show()` calls we make. (Confirmed via three
-            // separate diagnostic passes: magenta-CSS test, main-thread
-            // dispatch test, and a definitive log showing show()
-            // returning Ok but no React mount.)
-            //
-            // To keep the window invisible to the user when not
-            // actively prompting, we park it WAY off-screen here. The
-            // OS thinks it's always shown, the WKWebView stays
-            // attached, React mounts, the `overlay-state` listener
-            // stays registered. `overlay::show_vocab` just teleports
-            // the window on-screen; `overlay::hide` teleports it back
-            // off-screen.
-            if let Some(overlay_win) = app.get_webview_window("overlay") {
-                overlay::park_offscreen(&overlay_win);
-                #[cfg(target_os = "macos")]
-                overlay::apply_fullscreen_overlay_behavior_public(&overlay_win);
-                log::info!("overlay: parked off-screen + NSPanel behavior applied");
-            } else {
-                log::warn!("overlay: window 'overlay' not found at startup");
-            }
 
             log::info!("App setup complete");
             Ok(())
@@ -280,10 +251,6 @@ pub fn run() {
             commands::update_vocabulary_term,
             commands::delete_vocabulary_term,
             commands::generate_phonetic,
-            commands::show_vocab_prompt,
-            commands::hide_vocab_prompt,
-            commands::take_pending_vocab_term,
-            commands::frontend_ping,
             commands::get_available_models,
             commands::local_model_status,
             commands::download_local_model,

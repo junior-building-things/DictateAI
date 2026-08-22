@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "DictateAI",
-  "version": "1.0.12",
+  "version": "1.0.21",
   "identifier": "com.dictateai.app",
   "build": {
     "frontendDist": "../dist",
@@ -19,22 +19,6 @@
         "resizable": true,
         "visible": true,
         "center": true
-      },
-      {
-        "title": "",
-        "label": "overlay",
-        "width": 360,
-        "height": 40,
-        "x": -10000,
-        "y": -10000,
-        "resizable": false,
-        "visible": true,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "focus": false
       }
     ],
     "security": {
