@@ -69,6 +69,8 @@ fn rewrite_rate(model: &str) -> Option<RewriteRate> {
         // Keep the legacy "*-preview" key too so DBs that haven't run the
         // rename migration yet still bill correctly.
         "gemini-3.1-flash-lite" | "gemini-3.1-flash-lite-preview" => Some((0.10, 0.40)),
+        "gemini-3.5-flash-lite" => Some((0.30, 2.50)),
+        "gemini-3.6-flash" => Some((1.50, 7.50)),
         "gemini-3-pro" | "gemini-3-pro-preview" => Some((1.25, 10.00)),
 
         // ===== Groq (LPU pricing) =====

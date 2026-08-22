@@ -177,6 +177,7 @@ async fn run_inner(
         alibaba_base_url,
         rewrite_provider,
         rewrite_model,
+        rewrite_thinking_level,
         local_cleanup_options,
     ) = {
         let db = state.db.lock().unwrap();
@@ -219,7 +220,9 @@ async fn run_inner(
         let rewrite_provider =
             settings::get(&db, "rewrite_provider").unwrap_or_else(|_| "Google".into());
         let rewrite_model =
-            settings::get(&db, "rewrite_model").unwrap_or_else(|_| "gemini-2.5-flash-lite".into());
+            settings::get(&db, "rewrite_model").unwrap_or_else(|_| "gemini-3.5-flash-lite".into());
+        let rewrite_thinking_level =
+            settings::get(&db, "rewrite_thinking_level").unwrap_or_else(|_| "minimal".into());
         let local_cleanup_options = local_cleanup::LocalCleanupOptions {
             filler: true,
             repeats: true,
@@ -241,6 +244,7 @@ async fn run_inner(
             alibaba_base_url,
             rewrite_provider,
             rewrite_model,
+            rewrite_thinking_level,
             local_cleanup_options,
         )
     };
@@ -326,6 +330,7 @@ async fn run_inner(
                         &rewrite_model,
                         &system_prompt,
                         &user_message,
+                        &rewrite_thinking_level,
                     ),
                 )
                 .await
@@ -850,7 +855,7 @@ fn normalize_audio(mut audio: Vec<f32>) -> Vec<f32> {
 /// on the focused text element. The OS fires our callback the moment the
 /// user edits the text in the destination app — typically <100 ms after
 /// the keystroke — and we emit a `dictation-edited` event for the
-/// frontend's vocab-prompt overlay.
+/// frontend's auto-learn diff.
 ///
 /// Lifetime: the `ValueChangeObserver` returned by
 /// `ax::subscribe_to_focused_value_changes` lives inside a tokio task that

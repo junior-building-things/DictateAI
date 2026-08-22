@@ -29,7 +29,10 @@ struct Part {
 
 #[derive(Serialize)]
 struct GenerationConfig {
-    temperature: f32,
+    /// Omitted entirely for Gemini 3.5+, where Google's guidance is to stop
+    /// sending sampling parameters rather than tune them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
     max_output_tokens: u32,
     #[serde(rename = "thinkingConfig")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,12 +86,26 @@ struct GeminiError {
     message: String,
 }
 
+/// Clamp a stored `rewrite_thinking_level` to the four levels Gemini 3.x
+/// accepts. Anything unrecognised (empty setting, hand-edited DB, a level
+/// Google retires later) falls back to `minimal`, which is what this app
+/// wants for transcript cleanup anyway.
+pub fn normalize_thinking_level(value: &str) -> &'static str {
+    match value {
+        "low" => "low",
+        "medium" => "medium",
+        "high" => "high",
+        _ => "minimal",
+    }
+}
+
 pub async fn rewrite(
     client: &reqwest::Client,
     api_key: &str,
     model: &str,
     system_prompt: &str,
     user_message: &str,
+    thinking_level: &str,
 ) -> AppResult<RewriteOutcome> {
     if api_key.is_empty() {
         return Err(AppError::Config(
@@ -96,23 +113,38 @@ pub async fn rewrite(
         ));
     }
 
-    let (api_model, thinking_config) = match model {
-        "gemini-2.5-flash-lite" => ("gemini-2.5-flash-lite", None),
+    let thinking_level = normalize_thinking_level(thinking_level);
+
+    // Third element is the sampling temperature. Gemini 3.5 deprecated
+    // temperature/top_p/top_k and Google's guidance is to drop them from the
+    // request rather than pass the old defaults, so 3.5 sends `None`.
+    // `thinkingConfig` is Gemini 3.x only — 2.5 Flash-Lite predates
+    // `thinkingLevel` and is left alone whatever the setting says.
+    let (api_model, thinking_config, temperature) = match model {
+        "gemini-3.5-flash-lite" => (
+            "gemini-3.5-flash-lite",
+            Some(ThinkingConfig { thinking_level }),
+            None,
+        ),
+        "gemini-3.6-flash" => (
+            "gemini-3.6-flash",
+            Some(ThinkingConfig { thinking_level }),
+            None,
+        ),
+        "gemini-2.5-flash-lite" => ("gemini-2.5-flash-lite", None, Some(0.3)),
         "gemini-3.1-flash-lite" => (
             "gemini-3.1-flash-lite",
-            Some(ThinkingConfig {
-                thinking_level: "minimal",
-            }),
+            Some(ThinkingConfig { thinking_level }),
+            Some(0.3),
         ),
         // Legacy: users may still have the pre-rename setting string.
         // Route to the same model under the new name.
         "gemini-3.1-flash-lite-preview" => (
             "gemini-3.1-flash-lite",
-            Some(ThinkingConfig {
-                thinking_level: "minimal",
-            }),
+            Some(ThinkingConfig { thinking_level }),
+            Some(0.3),
         ),
-        _ => ("gemini-2.5-flash-lite", None),
+        _ => ("gemini-2.5-flash-lite", None, Some(0.3)),
     };
 
     let request = GeminiRequest {
@@ -127,7 +159,7 @@ pub async fn rewrite(
             }],
         }],
         generation_config: GenerationConfig {
-            temperature: 0.3,
+            temperature,
             max_output_tokens: 2048,
             thinking_config,
         },
@@ -193,12 +225,14 @@ pub async fn validate_api_key(
     api_key: &str,
     model: &str,
 ) -> AppResult<()> {
+    // Validation is a two-token ping, not a rewrite — always cheapest.
     let _ = rewrite(
         client,
         api_key,
         model,
         "You are a validator. Reply with exactly: OK",
         "Return OK",
+        "minimal",
     )
     .await?;
     Ok(())

@@ -517,73 +517,6 @@ pub fn prompt_accessibility_permission() {
 
 // --- Vocabulary helpers ---
 
-/// Show the floating "Add 'term' to vocabulary?" overlay (the same
-/// NSPanel-backed pill that used to host "Listening…"). Non-activating
-/// — the user can keep typing in whatever app they're focused on while
-/// this is visible.
-///
-/// Skips the prompt entirely if the term is already in the vocabulary
-/// (case-insensitive). The edit-monitor's proper-noun heuristic doesn't
-/// dedupe against existing vocab on its own, so without this check the
-/// user would see "Add CTR to vocabulary?" every time they correct CTR
-/// in a dictation — even though they already accepted it yesterday.
-#[tauri::command]
-pub fn show_vocab_prompt(app: AppHandle, state: State<AppState>, term: String) {
-    log::info!("show_vocab_prompt: invoked for term {:?}", term);
-    {
-        let conn = state.db.lock().unwrap();
-        match vocabulary::term_exists(&conn, &term) {
-            Ok(true) => {
-                log::info!(
-                    "show_vocab_prompt: term {:?} already in vocabulary, skipping prompt",
-                    term
-                );
-                return;
-            }
-            Ok(false) => {}
-            Err(e) => log::warn!(
-                "show_vocab_prompt: term_exists check failed (will prompt anyway): {}",
-                e
-            ),
-        }
-    }
-    crate::overlay::show_vocab(&app, &term);
-}
-
-/// Hide the overlay. Called by the overlay's React tree when the user
-/// clicks Add (after the save completes) or dismiss.
-#[tauri::command]
-pub fn hide_vocab_prompt(app: AppHandle) {
-    crate::overlay::hide(&app);
-}
-
-/// Read-and-clear the pending vocab term. Called by the overlay's
-/// React tree on mount as a robust alternative to the event listener
-/// — see `overlay::PendingVocabTerm` for why this exists.
-#[tauri::command]
-pub fn take_pending_vocab_term(
-    state: tauri::State<crate::overlay::PendingVocabTerm>,
-) -> Option<String> {
-    let result = state.0.lock().unwrap().take();
-    // Only log when we actually return a term — the overlay polls
-    // this command 3× per second, so logging on every poll would
-    // flood the log with `returned "(none)"` lines.
-    if let Some(ref term) = result {
-        log::info!("take_pending_vocab_term: returned {:?}", term);
-    }
-    result
-}
-
-/// DIAGNOSTIC: called from `main.tsx` the moment a webview loads and
-/// from the overlay React tree on key state transitions. Helped us
-/// diagnose the long-running "pill never paints" bug by letting us see
-/// the frontend's execution state in the Rust log. Kept around because
-/// it's cheap and useful for future "is the overlay alive?" questions.
-#[tauri::command]
-pub fn frontend_ping(label: String) {
-    log::info!("frontend_ping: label={}", label);
-}
-
 /// Ask the user's configured rewrite model to generate a simple ASCII-letter
 /// phonetic pronunciation for a single term. Used by the History tab's
 /// "learn from corrections" flow: when the user edits a misheard word back
@@ -643,7 +576,9 @@ Examples:\n\
 
     let outcome = match provider.as_str() {
         "OpenAI" => openai_rewrite::rewrite(&http, &openai_key, &model, system, user).await,
-        "Google" => gemini::rewrite(&http, &gemini_key, &model, system, user).await,
+        // Phonetic generation is a single-token lookup, not the dictation
+        // rewrite — pinned to `minimal` rather than the user's setting.
+        "Google" => gemini::rewrite(&http, &gemini_key, &model, system, user, "minimal").await,
         "Groq" => groq::rewrite(&http, &groq_key, &model, system, user).await,
         "Alibaba" => {
             alibaba::rewrite(&http, &alibaba_key, &alibaba_base, &model, system, user).await

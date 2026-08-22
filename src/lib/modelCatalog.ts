@@ -151,6 +151,27 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
   ],
   Google: [
     {
+      label: "gemini-3.5-flash-lite",
+      setting: "gemini-3.5-flash-lite",
+      description: "Google's Gemini 3.5 Flash-Lite — the default rewrite model.",
+      metrics: {
+        latency: "200-400 ms",
+        accuracy: "1M context, 64K output",
+        cost: "$0.00025/req",
+      },
+    },
+    {
+      label: "gemini-3.6-flash",
+      setting: "gemini-3.6-flash",
+      description:
+        "Google's Gemini 3.6 Flash — the full Flash tier. Better on hard cleanups than Flash-Lite, but ~10x the cost per rewrite.",
+      metrics: {
+        latency: "400-900 ms",
+        accuracy: "1M context, 64K output",
+        cost: "$0.00094/req",
+      },
+    },
+    {
       label: "gemini-2.5-flash-lite",
       setting: "gemini-2.5-flash-lite",
       description: "Fast prompt-aware rewrite with Gemini 2.5 Flash-Lite.",
@@ -163,7 +184,7 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
     {
       label: "gemini-3.1-flash-lite",
       setting: "gemini-3.1-flash-lite",
-      description: "Google's Gemini 3.1 Flash-Lite — fast, low-cost, the default rewrite model.",
+      description: "Google's Gemini 3.1 Flash-Lite — the previous default.",
       metrics: {
         latency: "100-300 ms",
         accuracy: "Faster output (45% faster)",
@@ -245,6 +266,18 @@ const legacyRewriteAliases: Record<string, string> = {
   "llama-3.2-1b-instruct-q4km": APPLE_FM_REWRITE_ID,
   "gemma-3-1b-it-q4km": APPLE_FM_REWRITE_ID,
 };
+
+/// The `thinkingLevel` values Gemini 3.x accepts, cheapest first. Kept in
+/// sync with `normalize_thinking_level` in `src-tauri/src/rewrite/gemini.rs`.
+export const THINKING_LEVELS = ["minimal", "low", "medium", "high"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/// Only Gemini 3.x takes a thinking level — 2.5 Flash-Lite predates
+/// `thinkingLevel`, and no other rewrite provider here has an equivalent.
+/// Mirrors the `thinking_config` match arms in `rewrite/gemini.rs`.
+export function rewriteModelSupportsThinking(setting: string) {
+  return setting.startsWith("gemini-3");
+}
 
 export const speechProviderOptions = (Object.keys(speechCatalog) as SpeechProvider[]).sort();
 export const rewriteProviderOptions = (Object.keys(rewriteCatalog) as RewriteProvider[]).sort();

@@ -1,5 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Apple, AudioLines, FileArchive, KeyRound, Loader2, PenLine, RefreshCw } from "lucide-react";
+import {
+  Apple,
+  AudioLines,
+  BrainCircuit,
+  FileArchive,
+  KeyRound,
+  Loader2,
+  PenLine,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Dropdown, ProviderLogo } from "../../components/Dropdown";
 import {
@@ -17,16 +26,27 @@ import {
 import {
   getRewriteModelOptions,
   getSpeechModelOptions,
+  rewriteModelLabelToSetting,
+  rewriteModelSupportsThinking,
   rewriteProviderOptions,
   speechProviderOptions,
+  THINKING_LEVELS,
   type RewriteProvider,
   type SpeechProvider,
+  type ThinkingLevel,
 } from "../../lib/modelCatalog";
 import LocalModelCard from "../../components/LocalModelCard";
 import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 
 const ALIBABA_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+
+const THINKING_LEVEL_LABEL_KEYS = {
+  minimal: "thinkingLevelMinimal",
+  low: "thinkingLevelLow",
+  medium: "thinkingLevelMedium",
+  high: "thinkingLevelHigh",
+} as const;
 const SETTINGS_CHANGED_EVENT = "dictateai-settings-changed";
 
 function emitSettingsChanged() {
@@ -61,12 +81,13 @@ export const Models = () => {
    * distinct from the rewrite-side `groq_api_key`.
    */
   const [speechGroqKey, setSpeechGroqKey] = useState("");
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("minimal");
   const [action, setAction] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const [d, gs, gp, gr, g, a, o, q, sq] = await Promise.all([
+      const [d, gs, gp, gr, g, a, o, q, sq, tl] = await Promise.all([
         getSetting("speech_deepgram_api_key").catch(() => ""),
         getSetting("speech_google_api_key").catch(() => ""),
         getSetting("speech_google_project_id").catch(() => ""),
@@ -76,6 +97,7 @@ export const Models = () => {
         getSetting("speech_openai_api_key").catch(() => ""),
         getSetting("groq_api_key").catch(() => ""),
         getSetting("speech_groq_api_key").catch(() => ""),
+        getSetting("rewrite_thinking_level").catch(() => "minimal"),
       ]);
       if (!active) return;
       setDeepgramKey(d);
@@ -87,6 +109,11 @@ export const Models = () => {
       setOpenAiKey(o);
       setGroqKey(q);
       setSpeechGroqKey(sq);
+      setThinkingLevel(
+        (THINKING_LEVELS as ReadonlyArray<string>).includes(tl)
+          ? (tl as ThinkingLevel)
+          : "minimal",
+      );
     };
     void load();
     return () => {
@@ -144,6 +171,18 @@ export const Models = () => {
       rewriteProvider: provider as RewriteProvider,
       rewriteModel: option.label,
     });
+  };
+
+  // ---- Thinking level: Gemini 3.x only, so the row hides for every other
+  // rewrite model rather than showing a control that does nothing.
+  const showThinkingLevel = rewriteModelSupportsThinking(
+    rewriteModelLabelToSetting(models.rewriteProvider, models.rewriteModel),
+  );
+
+  const selectThinkingLevel = async (next: ThinkingLevel) => {
+    setThinkingLevel(next);
+    await saveSetting("rewrite_thinking_level", next);
+    emitSettingsChanged();
   };
 
   // ---- Validation handlers ---------------------------------------------
@@ -336,6 +375,29 @@ export const Models = () => {
             />
           </div>
         </div>
+
+        {showThinkingLevel ? (
+          <div className="s-row">
+            <div className="s-icon">
+              <BrainCircuit strokeWidth={2} />
+            </div>
+            <div className="s-body">
+              <div className="s-label">{t("thinkingLevelTitle")}</div>
+              <div className="s-desc">{t("thinkingLevelDescription")}</div>
+            </div>
+            <div className="s-control">
+              <Dropdown<ThinkingLevel>
+                value={thinkingLevel}
+                minWidth={260}
+                options={THINKING_LEVELS.map((level) => ({
+                  value: level,
+                  label: t(THINKING_LEVEL_LABEL_KEYS[level]),
+                }))}
+                onChange={(value) => void selectThinkingLevel(value)}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <RewriteKeyRow
           provider={models.rewriteProvider}
