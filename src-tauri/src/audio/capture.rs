@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 use std::sync::mpsc;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -107,19 +109,67 @@ impl CaptureState {
     }
 }
 
+/// How long the cpal input stream stays open after a recording ends.
+///
+/// An open input stream is a held microphone, and coreaudiod turns that into a
+/// `PreventUserIdleSystemSleep` assertion — the Mac cannot idle-sleep while it
+/// is up. This stream used to be held for the whole process lifetime, which
+/// meant a machine that never slept once the user had dictated even once.
+///
+/// Currently **zero**: the stream is dropped as soon as a recording ends, so
+/// the mic is never held between dictations. The cost is that every press
+/// pays CoreAudio stream setup and starts with an empty pre-roll ring, so the
+/// first syllable can be clipped — the exact problem `a65fba5` fixed. Raising
+/// this back above zero keeps the stream warm between dictations and restores
+/// the pre-roll, at the price of holding the mic (and blocking sleep) for that
+/// long after each use.
+const IDLE_STREAM_TIMEOUT: Duration = Duration::ZERO;
+
 /// Runs on a dedicated thread — owns the cpal stream (which is !Send on macOS).
-/// The stream is opened once on first `Start` and kept alive for the rest of
-/// the app's lifetime so the rolling pre-roll buffer is always primed.
+/// The stream is opened on the first `Start` and closed again after
+/// `IDLE_STREAM_TIMEOUT` with no recording, which releases the microphone and
+/// lets the system idle-sleep.
 #[allow(unused_assignments)]
 fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
     let mut state: Option<Arc<Mutex<CaptureState>>> = None;
-    let mut _active_stream: Option<cpal::Stream> = None;
+    let mut active_stream: Option<cpal::Stream> = None;
     let mut device_sample_rate: u32 = TARGET_SAMPLE_RATE;
+    // `Some(t)` whenever a stream is open with no recording in flight — `t`
+    // is when the idle countdown started.
+    let mut idle_since: Option<Instant> = None;
 
-    for cmd in cmd_rx.iter() {
+    loop {
+        // With no stream open there's nothing to release, so block forever.
+        // With one open, wait only as long as the idle budget has left.
+        let cmd = match idle_since {
+            Some(since) => {
+                let remaining = IDLE_STREAM_TIMEOUT.saturating_sub(since.elapsed());
+                match cmd_rx.recv_timeout(remaining) {
+                    Ok(cmd) => cmd,
+                    Err(RecvTimeoutError::Timeout) => {
+                        // Dropping the stream is what releases the device.
+                        active_stream = None;
+                        state = None;
+                        idle_since = None;
+                        log::info!(
+                            "Audio stream closed after {}s idle; microphone released",
+                            IDLE_STREAM_TIMEOUT.as_secs()
+                        );
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            None => match cmd_rx.recv() {
+                Ok(cmd) => cmd,
+                Err(_) => break,
+            },
+        };
+
         match cmd {
             AudioCommand::Start => {
-                if _active_stream.is_none() {
+                idle_since = None;
+                if active_stream.is_none() {
                     match create_input_stream() {
                         Ok((stream, sample_rate, new_state)) => {
                             device_sample_rate = sample_rate;
@@ -128,7 +178,7 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
                                 continue;
                             }
                             state = Some(new_state);
-                            _active_stream = Some(stream);
+                            active_stream = Some(stream);
                             log::info!(
                                 "Audio stream opened (device rate: {}Hz, preroll: {}ms)",
                                 sample_rate,
@@ -172,6 +222,9 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
                     Ok(samples)
                 };
 
+                // Start the countdown that releases the mic if no further
+                // recording arrives.
+                idle_since = Some(Instant::now());
                 let _ = result_tx.send(result);
             }
         }
