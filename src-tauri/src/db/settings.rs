@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use rusqlite::Connection;
 
 use crate::error::{AppError, AppResult};
@@ -87,17 +90,52 @@ pub fn get_all(conn: &Connection) -> AppResult<Vec<(String, String)>> {
 /// Read a secret from the macOS Keychain. Returns an empty string when no
 /// entry exists, mirroring the previous DB-backed behavior so callers that
 /// check `.trim().is_empty()` still work.
+/// Process-lifetime cache of Keychain-backed secrets.
+///
+/// Every hotkey press runs `processing_mode::resolve`, which reads the
+/// provider API keys, and the pipeline reads them again per dictation — so an
+/// uncached `get_secret` hits the Keychain several times per dictation. That
+/// matters twice over: it puts I/O on the press path (latency is the product),
+/// and every access is another chance for macOS to raise the "wants to use
+/// your confidential information" ACL dialog if the item's trust is ever
+/// broken. One read per key per app run keeps both to a minimum, and confines
+/// any dialog to the moment the user actually touches that provider.
+///
+/// Trade-off: a secret edited directly in Keychain Access while the app is
+/// running isn't seen until restart. Writes through `set` update the cache, so
+/// the app's own edits stay consistent.
+fn secret_cache() -> &'static Mutex<HashMap<String, String>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn get_secret(key: &str) -> AppResult<String> {
+    {
+        let cache = secret_cache().lock().unwrap();
+        if let Some(hit) = cache.get(key) {
+            return Ok(hit.clone());
+        }
+    }
+
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, key)
         .map_err(|e| AppError::Config(format!("Keychain entry init failed for '{}': {}", key, e)))?;
-    match entry.get_password() {
-        Ok(v) => Ok(v),
-        Err(keyring::Error::NoEntry) => Ok(String::new()),
-        Err(e) => Err(AppError::Config(format!(
-            "Keychain read failed for '{}': {}",
-            key, e
-        ))),
-    }
+    // A missing entry caches as an empty string: unconfigured providers are
+    // the common case and shouldn't re-query the Keychain on every press.
+    let value = match entry.get_password() {
+        Ok(v) => v,
+        Err(keyring::Error::NoEntry) => String::new(),
+        Err(e) => {
+            return Err(AppError::Config(format!(
+                "Keychain read failed for '{}': {}",
+                key, e
+            )))
+        }
+    };
+    secret_cache()
+        .lock()
+        .unwrap()
+        .insert(key.to_string(), value.clone());
+    Ok(value)
 }
 
 /// Write a secret to the macOS Keychain. An empty value deletes the entry
@@ -108,17 +146,32 @@ fn set_secret(key: &str, value: &str) -> AppResult<()> {
         .map_err(|e| AppError::Config(format!("Keychain entry init failed for '{}': {}", key, e)))?;
     if value.is_empty() {
         match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(keyring::Error::NoEntry) => {
+                cache_secret(key, value);
+                Ok(())
+            }
             Err(e) => Err(AppError::Config(format!(
                 "Keychain delete failed for '{}': {}",
                 key, e
             ))),
         }
     } else {
-        entry.set_password(value).map_err(|e| {
-            AppError::Config(format!("Keychain write failed for '{}': {}", key, e))
-        })
+        entry
+            .set_password(value)
+            .map(|()| cache_secret(key, value))
+            .map_err(|e| {
+                AppError::Config(format!("Keychain write failed for '{}': {}", key, e))
+            })
     }
+}
+
+/// Refresh the cached copy after a successful Keychain write, so the next
+/// read doesn't return the pre-write value.
+fn cache_secret(key: &str, value: &str) {
+    secret_cache()
+        .lock()
+        .unwrap()
+        .insert(key.to_string(), value.to_string());
 }
 
 /// One-time migration: move any non-empty secret values from the SQLite
