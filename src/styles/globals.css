@@ -121,11 +121,6 @@ body.main-window {
   overflow: hidden;
 }
 
-body.overlay-window {
-  background: transparent !important;
-  overflow: hidden;
-}
-
 /* App-wide dotted-grid backdrop (lives under everything, hairline-strong dots). */
 .app-bg {
   position: fixed;
@@ -1519,6 +1514,28 @@ select.input-control option {
 .dropdown.open .dropdown-trigger .dropdown-chev {
   transform: translateY(-50%) rotate(180deg);
 }
+/* Compact icon-only dropdown — the header's theme picker. Same menu and
+   behavior as a settings dropdown, but the trigger is a 32x32 icon button
+   with no label and no chevron, matching the other header controls. */
+.dropdown-icon .dropdown-trigger {
+  width: 32px;
+  min-width: 0;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+}
+.dropdown-icon .dropdown-trigger:hover,
+.dropdown-icon.open .dropdown-trigger {
+  color: var(--text);
+}
+.dropdown-icon .dropdown-chev {
+  display: none;
+}
+.dropdown-icon .dropdown-menu {
+  min-width: 148px;
+}
+
 .dropdown-label {
   flex: 1;
   text-align: left;

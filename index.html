@@ -11,6 +11,24 @@
       href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Resolve the theme before first paint so a light-mode user doesn't see
+      // a dark flash while React boots. Mirrors the logic in Layout.tsx:
+      // 'dictateai.theme' holds 'dark' | 'light' | 'system'; dark is the
+      // default and is expressed by the *absence* of data-theme.
+      (function () {
+        try {
+          var mode = localStorage.getItem("dictateai.theme") || "dark";
+          var dark =
+            mode === "dark" ||
+            (mode === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (!dark) document.documentElement.setAttribute("data-theme", "light");
+        } catch (e) {
+          /* localStorage blocked — fall through to the dark default. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

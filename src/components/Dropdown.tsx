@@ -23,6 +23,10 @@ interface DropdownProps<V extends string> {
    */
   renderTriggerLabel?: (option: DropdownOption<V>) => ReactNode;
   className?: string;
+  /** Accessible name for the trigger. Required when the trigger renders an
+   *  icon with no visible text, since there's nothing for a screen reader
+   *  to announce otherwise. */
+  ariaLabel?: string;
 }
 
 /**
@@ -40,6 +44,7 @@ export function Dropdown<V extends string>({
   minWidth,
   renderTriggerLabel,
   className,
+  ariaLabel,
 }: DropdownProps<V>) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -78,11 +83,29 @@ export function Dropdown<V extends string>({
   useLayoutEffect(() => {
     if (!open || !triggerRef.current || !menuRef.current) return;
     const trigger = triggerRef.current.getBoundingClientRect();
+    // Apply the final min-width *before* measuring. The first render uses a
+    // placeholder style, so measuring there reports a width the menu won't
+    // actually have — which then lands the right-aligned `left` tens of
+    // pixels off once the real width applies.
+    menuRef.current.style.minWidth = `${trigger.width}px`;
     const menuHeight = menuRef.current.offsetHeight;
+    const menuWidth = menuRef.current.offsetWidth;
     const spaceBelow = window.innerHeight - trigger.bottom;
     const openUp = spaceBelow < menuHeight + 16 && trigger.top > menuHeight + 16;
+
+    // Menus are left-aligned to the trigger, which runs off-screen when the
+    // trigger sits near the right edge and the menu is wider than it (an
+    // icon-only trigger, say). Right-align to the trigger in that case, then
+    // clamp so a menu wider than the window still starts on-screen.
+    const margin = 8;
+    let left = trigger.left;
+    if (left + menuWidth > window.innerWidth - margin) {
+      left = trigger.right - menuWidth;
+    }
+    left = Math.max(margin, left);
+
     setMenuStyle({
-      left: trigger.left,
+      left,
       top: openUp ? trigger.top - menuHeight - 4 : trigger.bottom + 4,
       minWidth: trigger.width,
     });
@@ -99,6 +122,7 @@ export function Dropdown<V extends string>({
         ref={triggerRef}
         type="button"
         className="dropdown-trigger"
+        aria-label={ariaLabel}
         style={minWidth ? { minWidth } : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >

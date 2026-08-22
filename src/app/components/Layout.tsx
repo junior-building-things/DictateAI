@@ -4,12 +4,14 @@ import {
   BookText,
   History as HistoryIcon,
   Home as HomeIcon,
+  Monitor,
   Moon,
   Settings as SettingsIcon,
   Sun,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { Dropdown } from "../../components/Dropdown";
 import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
 import { DictationProvider } from "../../lib/useDictation";
@@ -37,13 +39,39 @@ export const Layout = () => {
   );
 };
 
+/**
+ * Theme modes, in the order the header button cycles through them.
+ * "system" follows the OS via `prefers-color-scheme`; the other two pin it.
+ */
+const THEME_MODES = ["dark", "light", "system"] as const;
+type ThemeMode = (typeof THEME_MODES)[number];
+
+const THEME_LABEL_KEYS = {
+  dark: "themeDark",
+  light: "themeLight",
+  system: "themeSystem",
+} as const;
+
+function ThemeIcon({ mode }: { mode: ThemeMode }) {
+  if (mode === "system") return <Monitor className="size-[14px]" strokeWidth={2} />;
+  if (mode === "dark") return <Moon className="size-[14px]" strokeWidth={2} />;
+  return <Sun className="size-[14px]" strokeWidth={2} />;
+}
+
+/** Collapse a mode to the palette that should actually be painted. */
+function resolveTheme(mode: ThemeMode): "dark" | "light" {
+  if (mode !== "system") return mode;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 const LayoutInner = () => {
   const location = useLocation();
   const { t } = useI18n();
   const { hotkeySettings } = useAppStore();
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
+  const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
-    return (localStorage.getItem("dictateai.theme") as "dark" | "light" | null) ?? "dark";
+    const stored = localStorage.getItem("dictateai.theme");
+    return THEME_MODES.includes(stored as ThemeMode) ? (stored as ThemeMode) : "dark";
   });
 
   // Listen for the backend's `dictation-edited` event — fired when the
@@ -58,7 +86,7 @@ const LayoutInner = () => {
     void listen<DictationEditedPayload>("dictation-edited", (event) => {
       if (!hotkeySettings.autoAddVocabulary) return;
       const { pasted, edited } = event.payload;
-      learnNewVocabTerms(pasted, edited);
+      void learnNewVocabTerms(pasted, edited);
     }).then((fn) => {
       unlisten = fn;
     });
@@ -67,15 +95,27 @@ const LayoutInner = () => {
     };
   }, [hotkeySettings.autoAddVocabulary]);
 
-  // Apply theme to <html> so token overrides cascade everywhere.
+  // Apply theme to <html> so token overrides cascade everywhere. Dark is the
+  // base palette, so it's expressed by *removing* the attribute — same
+  // contract the pre-paint script in index.html uses.
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "light") {
-      root.setAttribute("data-theme", "light");
-    } else {
-      root.removeAttribute("data-theme");
-    }
+    const apply = () => {
+      const root = document.documentElement;
+      if (resolveTheme(theme) === "light") {
+        root.setAttribute("data-theme", "light");
+      } else {
+        root.removeAttribute("data-theme");
+      }
+    };
+
+    apply();
     localStorage.setItem("dictateai.theme", theme);
+
+    // Only "system" needs to track the OS; an explicit choice is fixed.
+    if (theme !== "system") return;
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
   }, [theme]);
 
   const sidebarItems = [
@@ -197,23 +237,18 @@ const LayoutInner = () => {
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                aria-label={t("toggleThemeLabel")}
-                className="grid size-8 place-items-center rounded-md transition-colors hover:!text-[var(--text)]"
-                style={{
-                  background: "transparent",
-                  border: "1px solid var(--hairline)",
-                  color: "var(--text-muted)",
-                }}
-              >
-                {theme === "dark" ? (
-                  <Sun className="size-[14px]" strokeWidth={2} />
-                ) : (
-                  <Moon className="size-[14px]" strokeWidth={2} />
-                )}
-              </button>
+              <Dropdown<ThemeMode>
+                value={theme}
+                className="dropdown-icon"
+                ariaLabel={t("toggleThemeLabel")}
+                options={THEME_MODES.map((mode) => ({
+                  value: mode,
+                  label: t(THEME_LABEL_KEYS[mode]),
+                  leading: <ThemeIcon mode={mode} />,
+                }))}
+                onChange={setTheme}
+                renderTriggerLabel={(option) => <ThemeIcon mode={option.value} />}
+              />
             </div>
           </header>
 
