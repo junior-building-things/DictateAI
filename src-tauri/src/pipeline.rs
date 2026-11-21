@@ -95,7 +95,7 @@ async fn run_inner(
     let (selected_speech_model, speech_settings) = {
         let db = state.db.lock().unwrap();
         (
-            settings::get(&db, "speech_model").unwrap_or_else(|_| "gpt-4o-mini-transcribe".into()),
+            settings::get(&db, "speech_model").unwrap_or_else(|_| "gpt-transcribe".into()),
             SpeechApiSettings {
                 deepgram_api_key: settings::get(&db, "speech_deepgram_api_key").unwrap_or_default(),
                 openai_api_key: settings::get(&db, "speech_openai_api_key").unwrap_or_default(),

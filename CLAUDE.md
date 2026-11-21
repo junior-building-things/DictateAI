@@ -32,11 +32,11 @@ A macOS desktop app for **push-to-talk dictation**. Hold a global hotkey to reco
 ## Providers
 
 **Speech-to-text** (`src-tauri/src/transcribe/`):
-- Cloud (`api.rs`): Deepgram `nova-3`, OpenAI `gpt-4o-transcribe` / `gpt-4o-mini-transcribe`, Google `chirp_3`, NVIDIA (API), Alibaba `qwen3-asr-flash`, Doubao/BytePlus.
+- Cloud (`api.rs`): Deepgram `nova-3`, OpenAI `gpt-transcribe`, Google `chirp_3`, NVIDIA (API), Alibaba `qwen3-asr-flash`, Doubao/BytePlus.
 - Local (`local/parakeet.rs`): `parakeet-tdt-0.6b-v2-int8`, `parakeet-tdt-0.6b-v3-int8` (downloaded on demand, run offline).
 
 **Rewrite** (`src-tauri/src/rewrite/`):
-- Alibaba `qwen2.5-7b-instruct`, Apple Foundation Models (`apple-fm-system`, on-device macOS), Google Gemini `gemini-3.5-flash-lite` (default), `gemini-3.6-flash`, `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite`, Groq `llama-3.1-8b-instant` / `llama-3.3-70b-versatile`, OpenAI `gpt-5-mini` / `gpt-5-nano`, plus local llama.cpp paths.
+- Alibaba `qwen2.5-7b-instruct`, Apple Foundation Models (`apple-fm-system`, on-device macOS), Google Gemini `gemini-3.5-flash-lite` (default), `gemini-3.6-flash`, Groq `openai/gpt-oss-20b` / `openai/gpt-oss-120b` (low reasoning effort), OpenAI `gpt-6-luna` / `gpt-6.1-terra` (reasoning off), plus local llama.cpp paths.
 
 The canonical model catalog (labels, settings keys, latency/accuracy/cost metrics, default providers, and legacy-id migration aliases) lives in [src/lib/modelCatalog.ts](src/lib/modelCatalog.ts). It must stay in sync with the Rust-side `LocalModelSpec` IDs and the provider match arms in `transcribe/api.rs`, `processing_mode.rs`, and `rewrite/mod.rs`.
 

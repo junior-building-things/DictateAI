@@ -68,26 +68,18 @@ fn rewrite_rate(model: &str) -> Option<RewriteRate> {
         // ===== OpenAI =====
         "gpt-4.1-mini" => Some((0.40, 1.60)),
         "gpt-4.1-nano" => Some((0.10, 0.40)),
-        "gpt-5-mini" => Some((0.25, 2.00)),
-        "gpt-5-nano" => Some((0.05, 0.40)),
+        "gpt-6.1-terra" => Some((1.00, 5.00)),
+        "gpt-6-luna" => Some((0.10, 0.50)),
 
         // ===== Google Gemini =====
-        "gemini-2.5-flash-lite" => Some((0.10, 0.40)),
         "gemini-2.5-flash" => Some((0.30, 2.50)),
-        // Priced at the cheapest stable tier (2.5-flash-lite) since Google
-        // hasn't published distinct rates yet for the 3.x Flash-Lite line.
-        // Keep the legacy "*-preview" key too so DBs that haven't run the
-        // rename migration yet still bill correctly.
-        "gemini-3.1-flash-lite" | "gemini-3.1-flash-lite-preview" => Some((0.10, 0.40)),
         "gemini-3.5-flash-lite" => Some((0.30, 2.50)),
         "gemini-3.6-flash" => Some((1.50, 7.50)),
         "gemini-3-pro" | "gemini-3-pro-preview" => Some((1.25, 10.00)),
 
         // ===== Groq (LPU pricing) =====
-        "llama-3.1-8b-instant" => Some((0.05, 0.08)),
-        "llama-3.3-70b-versatile" => Some((0.59, 0.79)),
-        "openai/gpt-oss-20b" => Some((0.10, 0.50)),
-        "openai/gpt-oss-120b" => Some((0.15, 0.75)),
+        "openai/gpt-oss-20b" => Some((0.075, 0.30)),
+        "openai/gpt-oss-120b" => Some((0.15, 0.60)),
         "moonshotai/kimi-k2-instruct-0905" => Some((1.00, 3.00)),
 
         // ===== Alibaba (DashScope, paid-tier USD equivalents) =====
@@ -108,8 +100,7 @@ fn speech_rate_per_minute(model: &str) -> Option<f64> {
     match model {
         // OpenAI Whisper + GPT-4o transcribe family — billed per minute.
         "whisper-1" => Some(0.006),
-        "gpt-4o-transcribe" => Some(0.006),
-        "gpt-4o-mini-transcribe" => Some(0.003),
+        "gpt-transcribe" => Some(0.0045),
 
         // Groq Whisper — billed per hour upstream, normalize to per minute.
         "whisper-large-v3" => Some(0.111 / 60.0),

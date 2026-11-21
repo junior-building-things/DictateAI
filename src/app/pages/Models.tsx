@@ -227,7 +227,7 @@ export const Models = () => {
     runAction("save-gemini", async () => {
       const k = geminiKey.trim();
       if (!k) throw new Error(t("enterGeminiApiKeyFirst"));
-      await validateGeminiApiKey(k, "gemini-2.5-flash-lite");
+      await validateGeminiApiKey(k, "gemini-3.5-flash-lite");
       await saveSetting("gemini_api_key", k);
       emitSettingsChanged();
       toast.info(t("geminiKeyValidatedAndSaved"));

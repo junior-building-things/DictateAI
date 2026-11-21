@@ -7,6 +7,9 @@ use crate::rewrite::RewriteOutcome;
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
+    /// GPT-6 Luna / Terra reason by default; cleanup doesn't need it and the
+    /// reasoning tokens would sit on the dictation's critical path.
+    reasoning_effort: &'static str,
 }
 
 #[derive(Serialize)]
@@ -59,7 +62,7 @@ pub async fn rewrite(
 
     let request = ChatCompletionRequest {
         model: if model.trim().is_empty() {
-            "gpt-5-mini".to_string()
+            "gpt-6-luna".to_string()
         } else {
             model.to_string()
         },
@@ -73,6 +76,7 @@ pub async fn rewrite(
                 content: user_message.to_string(),
             },
         ],
+        reasoning_effort: "none",
     };
 
     let response = client

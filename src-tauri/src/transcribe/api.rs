@@ -49,7 +49,7 @@ pub async fn transcribe(
         "nova-3" => {
             transcribe_deepgram(client, &wav_bytes, language, &settings.deepgram_api_key).await
         }
-        "gpt-4o-mini-transcribe" | "gpt-4o-transcribe" => {
+        "gpt-transcribe" => {
             transcribe_openai(
                 client,
                 &wav_bytes,

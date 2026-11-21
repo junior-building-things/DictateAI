@@ -104,9 +104,14 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                        AND COALESCE((SELECT value FROM settings WHERE key = 'speech_model'), '')
                            NOT LIKE 'parakeet-%'));
 
-        UPDATE settings SET value = 'gpt-4o-mini-transcribe'
+        UPDATE settings SET value = 'gpt-transcribe'
             WHERE key = 'speech_model'
               AND value IN ('', 'nvidia-parakeet-tdt-0.6b-v2', 'nvidia-canary-qwen-2.5b', 'doubao-byteplus');
+
+        -- OpenAI shuts down gpt-4o(-mini)-transcribe on 2027-02-26.
+        UPDATE settings SET value = 'gpt-transcribe'
+            WHERE key = 'speech_model'
+              AND value IN ('gpt-4o-transcribe', 'gpt-4o-mini-transcribe');
 
         UPDATE settings SET value = 'nova-3'
             WHERE key = 'speech_model'
@@ -124,13 +129,24 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             WHERE key = 'rewrite_provider'
               AND value = 'Local Cleanup';
 
-        UPDATE settings SET value = 'gpt-5-mini'
+        -- OpenAI shuts down gpt-5-mini / gpt-5-nano on 2026-12-11 and names
+        -- GPT-6.1 Terra / GPT-6 Luna as their replacements.
+        UPDATE settings SET value = 'gpt-6.1-terra'
             WHERE key = 'rewrite_model'
-              AND value IN ('gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini');
+              AND value IN ('gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5-mini');
 
-        UPDATE settings SET value = 'gpt-5-nano'
+        UPDATE settings SET value = 'gpt-6-luna'
             WHERE key = 'rewrite_model'
-              AND value = 'gpt-4.1-nano';
+              AND value IN ('gpt-4.1-nano', 'gpt-5-nano');
+
+        -- Groq moved its Llama models to Enterprise-only.
+        UPDATE settings SET value = 'openai/gpt-oss-20b'
+            WHERE key = 'rewrite_model'
+              AND value = 'llama-3.1-8b-instant';
+
+        UPDATE settings SET value = 'openai/gpt-oss-120b'
+            WHERE key = 'rewrite_model'
+              AND value = 'llama-3.3-70b-versatile';
 
         UPDATE settings SET value = 'qwen2.5-7b-instruct'
             WHERE key = 'rewrite_model'
@@ -155,11 +171,11 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             WHERE key = 'rewrite_provider'
               AND value = 'Local';
 
-        -- Google renamed Gemini 3.1 Flash Lite out of preview; existing
-        -- users on the old setting string get migrated to the new name.
-        UPDATE settings SET value = 'gemini-3.1-flash-lite'
+        -- Gemini 2.5 Flash-Lite is closed to new API users and 3.1 Flash-Lite
+        -- shuts down 2027-05-07; Google names 3.5 Flash-Lite as the successor.
+        UPDATE settings SET value = 'gemini-3.5-flash-lite'
             WHERE key = 'rewrite_model'
-              AND value = 'gemini-3.1-flash-lite-preview';
+              AND value IN ('gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview');
         ",
     )?;
 
@@ -262,6 +278,30 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM vocabulary WHERE term = 'Aeolus'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn retired_models_migrate_to_replacements() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let get = |key: &str| -> String {
+            conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0)).unwrap()
+        };
+        for (old, new) in [
+            ("gpt-5-nano", "gpt-6-luna"),
+            ("gpt-5-mini", "gpt-6.1-terra"),
+            ("llama-3.1-8b-instant", "openai/gpt-oss-20b"),
+            ("llama-3.3-70b-versatile", "openai/gpt-oss-120b"),
+            ("gemini-2.5-flash-lite", "gemini-3.5-flash-lite"),
+            ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite"),
+        ] {
+            conn.execute("UPDATE settings SET value = ?1 WHERE key = 'rewrite_model'", [old]).unwrap();
+            run_migrations(&conn).unwrap();
+            assert_eq!(get("rewrite_model"), new, "{}", old);
+        }
+        conn.execute("UPDATE settings SET value = 'gpt-4o-mini-transcribe' WHERE key = 'speech_model'", []).unwrap();
+        run_migrations(&conn).unwrap();
+        assert_eq!(get("speech_model"), "gpt-transcribe");
     }
 
     #[test]

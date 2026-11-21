@@ -101,23 +101,14 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
   ],
   OpenAI: [
     {
-      label: "gpt-4o-mini-transcribe",
-      setting: "gpt-4o-mini-transcribe",
-      description: "Lighter, faster OpenAI GPT-4o Mini speech-to-text.",
+      label: "gpt-transcribe",
+      setting: "gpt-transcribe",
+      description:
+        "OpenAI GPT-Transcribe — replaced gpt-4o-transcribe, with a lower error rate and keyword hints.",
       metrics: {
-        latency: "300-600 ms",
-        accuracy: "5-7% WER",
-        cost: "$0.003/min",
-      },
-    },
-    {
-      label: "gpt-4o-transcribe",
-      setting: "gpt-4o-transcribe",
-      description: "OpenAI GPT-4o powered speech-to-text transcription.",
-      metrics: {
-        latency: "500-900 ms",
-        accuracy: "3-5% WER",
-        cost: "$0.006/min",
+        latency: "Medium",
+        accuracy: "Lower WER than gpt-4o-transcribe",
+        cost: "$0.0045/min",
       },
     },
   ],
@@ -171,70 +162,50 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
         cost: "$0.00094/req",
       },
     },
-    {
-      label: "gemini-2.5-flash-lite",
-      setting: "gemini-2.5-flash-lite",
-      description: "Fast prompt-aware rewrite with Gemini 2.5 Flash-Lite.",
-      metrics: {
-        latency: "300-800 ms",
-        accuracy: "184-392 tokens/s",
-        cost: "$0.000056/req",
-      },
-    },
-    {
-      label: "gemini-3.1-flash-lite",
-      setting: "gemini-3.1-flash-lite",
-      description: "Google's Gemini 3.1 Flash-Lite — the previous default.",
-      metrics: {
-        latency: "100-300 ms",
-        accuracy: "Faster output (45% faster)",
-        cost: "$0.000173/req",
-      },
-    },
   ],
   Groq: [
     {
-      label: "llama-3.1-8b-instant",
-      setting: "llama-3.1-8b-instant",
+      label: "gpt-oss-20b",
+      setting: "openai/gpt-oss-20b",
       description:
-        "Meta Llama 3.1 8B on Groq's LPU silicon. The default — typical rewrite under 300 ms with strong quality for transcript cleanup.",
+        "OpenAI's open-weight GPT-OSS 20B on Groq's LPU silicon, run with low reasoning effort. The fastest Groq option.",
       metrics: {
-        latency: "150-300 ms",
-        accuracy: "1100+ tokens/s",
-        cost: "$0.00001/req",
+        latency: "Very fast",
+        accuracy: "~1000 tokens/s",
+        cost: "$0.00008/req",
       },
     },
     {
-      label: "llama-3.3-70b-versatile",
-      setting: "llama-3.3-70b-versatile",
+      label: "gpt-oss-120b",
+      setting: "openai/gpt-oss-120b",
       description:
-        "Meta Llama 3.3 70B on Groq. Slower than 8B but a notch better on hard reasoning (self-correction, garbled-word fixes).",
+        "GPT-OSS 120B on Groq. Slower than 20B but better on hard cleanups (self-correction, garbled-word fixes).",
       metrics: {
-        latency: "300-500 ms",
-        accuracy: "750+ tokens/s",
-        cost: "$0.00006/req",
+        latency: "Fast",
+        accuracy: "~500 tokens/s",
+        cost: "$0.00016/req",
       },
     },
   ],
   OpenAI: [
     {
-      label: "gpt-5-mini",
-      setting: "gpt-5-mini",
-      description: "OpenAI's smaller GPT-5 rewrite model.",
+      label: "gpt-6-luna",
+      setting: "gpt-6-luna",
+      description: "OpenAI's most efficient GPT-6 model, run with reasoning off.",
       metrics: {
-        latency: "700-1100 ms",
-        accuracy: "74 tokens/s",
-        cost: "$0.000224/req",
+        latency: "Fast",
+        accuracy: "1M context",
+        cost: "$0.00007/req",
       },
     },
     {
-      label: "gpt-5-nano",
-      setting: "gpt-5-nano",
-      description: "The lightest GPT-5 rewrite option.",
+      label: "gpt-6.1-terra",
+      setting: "gpt-6.1-terra",
+      description: "OpenAI's fast mid-tier GPT-6.1 model, run with reasoning off. Better writing, ~10x the cost of Luna.",
       metrics: {
-        latency: "600-900 ms",
-        accuracy: "127 tokens/s",
-        cost: "$0.000056/req",
+        latency: "Medium",
+        accuracy: "1M context",
+        cost: "$0.0007/req",
       },
     },
   ],
@@ -243,6 +214,9 @@ const rewriteCatalog: Record<RewriteProvider, ModelOption[]> = {
 const legacySpeechAliases: Record<string, string> = {
   "deepgram-nova-3": "nova-3",
   "google-chirp-3": "chirp_3",
+  // OpenAI shut these down on 2027-02-26.
+  "gpt-4o-transcribe": "gpt-transcribe",
+  "gpt-4o-mini-transcribe": "gpt-transcribe",
   "alibaba-qwen3-asr-flash": "qwen3-asr-flash",
   "nvidia-parakeet-tdt-0.6b-v2": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
   "nvidia-canary-qwen-2.5b": firstSpeechSetting(DEFAULT_SPEECH_PROVIDER),
@@ -253,10 +227,18 @@ const legacySpeechAliases: Record<string, string> = {
 };
 
 const legacyRewriteAliases: Record<string, string> = {
-  "gpt-4o-mini": "gpt-5-mini",
-  "gpt-4.1": "gpt-5-mini",
-  "gpt-4.1-mini": "gpt-5-mini",
-  "gpt-4.1-nano": "gpt-5-nano",
+  "gpt-4o-mini": "gpt-6.1-terra",
+  "gpt-4.1": "gpt-6.1-terra",
+  "gpt-4.1-mini": "gpt-6.1-terra",
+  "gpt-4.1-nano": "gpt-6-luna",
+  // Retired or restricted upstream; mirrors the migrations in schema.rs.
+  "gpt-5-mini": "gpt-6.1-terra",
+  "gpt-5-nano": "gpt-6-luna",
+  "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+  "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite-preview": "gemini-3.5-flash-lite",
   "qwen3-8b": "qwen2.5-7b-instruct",
   "Rule-based Cleanup": firstRewriteSetting(DEFAULT_REWRITE_PROVIDER),
   // Initial local-LLM rollout shipped a placeholder setting value;
@@ -272,8 +254,8 @@ const legacyRewriteAliases: Record<string, string> = {
 export const THINKING_LEVELS = ["minimal", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
-/// Only Gemini 3.x takes a thinking level — 2.5 Flash-Lite predates
-/// `thinkingLevel`, and no other rewrite provider here has an equivalent.
+/// Only Gemini 3.x takes a thinking level; no other rewrite provider here
+/// has an equivalent.
 /// Mirrors the `thinking_config` match arms in `rewrite/gemini.rs`.
 export function rewriteModelSupportsThinking(setting: string) {
   return setting.startsWith("gemini-3");

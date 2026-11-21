@@ -123,8 +123,6 @@ pub async fn rewrite(
     // Third element is the sampling temperature. Gemini 3.5 deprecated
     // temperature/top_p/top_k and Google's guidance is to drop them from the
     // request rather than pass the old defaults, so 3.5 sends `None`.
-    // `thinkingConfig` is Gemini 3.x only — 2.5 Flash-Lite predates
-    // `thinkingLevel` and is left alone whatever the setting says.
     let (api_model, thinking_config, temperature) = match model {
         "gemini-3.5-flash-lite" => (
             "gemini-3.5-flash-lite",
@@ -136,20 +134,14 @@ pub async fn rewrite(
             Some(ThinkingConfig { thinking_level }),
             None,
         ),
-        "gemini-2.5-flash-lite" => ("gemini-2.5-flash-lite", None, Some(0.3)),
-        "gemini-3.1-flash-lite" => (
-            "gemini-3.1-flash-lite",
+        // 2.5 Flash-Lite is closed to new API users and 3.1 Flash-Lite shuts
+        // down in May 2027 (schema.rs migrates both), so anything else
+        // falls back to the default.
+        _ => (
+            "gemini-3.5-flash-lite",
             Some(ThinkingConfig { thinking_level }),
-            Some(0.3),
+            None,
         ),
-        // Legacy: users may still have the pre-rename setting string.
-        // Route to the same model under the new name.
-        "gemini-3.1-flash-lite-preview" => (
-            "gemini-3.1-flash-lite",
-            Some(ThinkingConfig { thinking_level }),
-            Some(0.3),
-        ),
-        _ => ("gemini-2.5-flash-lite", None, Some(0.3)),
     };
 
     let request = GeminiRequest {

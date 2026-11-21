@@ -24,16 +24,9 @@ pub fn available_models(_language: &str) -> Vec<ModelInfo> {
             size_mb: 0,
         },
         ModelInfo {
-            name: "gpt-4o-transcribe".into(),
+            name: "gpt-transcribe".into(),
             label: "OpenAI".into(),
-            description: "OpenAI GPT-4o Transcribe speech-to-text.".into(),
-            filename: "".into(),
-            size_mb: 0,
-        },
-        ModelInfo {
-            name: "gpt-4o-mini-transcribe".into(),
-            label: "OpenAI".into(),
-            description: "OpenAI GPT-4o Mini Transcribe speech-to-text.".into(),
+            description: "OpenAI GPT-Transcribe speech-to-text.".into(),
             filename: "".into(),
             size_mb: 0,
         },

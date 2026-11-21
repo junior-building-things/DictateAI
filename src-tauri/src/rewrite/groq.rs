@@ -10,6 +10,12 @@ struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f32,
+    /// GPT-OSS always reasons; "low" keeps that short, and leaving the
+    /// reasoning out of the response keeps `content` to the cleaned text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    include_reasoning: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -56,12 +62,14 @@ pub async fn rewrite(
         ));
     }
 
+    let model = if model.trim().is_empty() {
+        "openai/gpt-oss-20b"
+    } else {
+        model
+    };
+    let is_gpt_oss = model.starts_with("openai/gpt-oss");
     let request = ChatCompletionRequest {
-        model: if model.trim().is_empty() {
-            "llama-3.3-70b-versatile".to_string()
-        } else {
-            model.to_string()
-        },
+        model: model.to_string(),
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -73,6 +81,8 @@ pub async fn rewrite(
             },
         ],
         temperature: 0.2,
+        reasoning_effort: is_gpt_oss.then_some("low"),
+        include_reasoning: is_gpt_oss.then_some(false),
     };
 
     let response = client
@@ -116,7 +126,7 @@ pub async fn validate_api_key(client: &reqwest::Client, api_key: &str) -> AppRes
     let _ = rewrite(
         client,
         api_key,
-        "llama-3.1-8b-instant",
+        "openai/gpt-oss-20b",
         "You are a validator. Reply with exactly: OK",
         "Return OK",
     )
