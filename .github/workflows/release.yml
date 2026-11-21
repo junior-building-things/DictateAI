@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: macos-latest
     permissions:
       contents: write
 
@@ -65,6 +65,7 @@ jobs:
           APPLE_TEAM_ID: Q2V7263T69
         run: |
           # llama.cpp's bundled cpp-httplib doesn't compile against OpenSSL 4.
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
           export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
           npm run tauri build -- --target aarch64-apple-darwin
 
