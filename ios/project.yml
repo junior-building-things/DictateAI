@@ -1,0 +1,52 @@
+# Generate the Xcode project with: xcodegen generate  (run inside ios/)
+name: DictateAI
+options:
+  bundleIdPrefix: com.dictateai
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: Q2V7263T69
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  DictateAI:
+    type: application
+    platform: iOS
+    sources: [DictateAI, Shared]
+    dependencies:
+      - target: DictateKeyboard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dictateai.ios
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: DictateAI
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: DictateAI records your voice when you tap the mic on the DictateAI keyboard.
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        CODE_SIGN_ENTITLEMENTS: DictateAI/DictateAI.entitlements
+  DictateKeyboard:
+    type: app-extension
+    platform: iOS
+    sources: [DictateKeyboard, Shared]
+    info:
+      path: DictateKeyboard/Info.plist
+      properties:
+        CFBundleDisplayName: DictateAI
+        NSMicrophoneUsageDescription: DictateAI records your voice when you tap the mic on the DictateAI keyboard.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            # Full Access: needed for the network, the shared keychain and the mic.
+            RequestsOpenAccess: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dictateai.ios.keyboard
+        CODE_SIGN_ENTITLEMENTS: DictateKeyboard/DictateKeyboard.entitlements
