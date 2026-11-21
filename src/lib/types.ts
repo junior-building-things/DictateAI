@@ -10,6 +10,8 @@ export interface HistoryEntry {
   tokens: number;
   /** Total dictation cost in USD (speech per-minute + rewrite per-token). */
   cost: number;
+  /** Ms from ending the recording to the text being delivered; null before it was recorded. */
+  latency_ms: number | null;
 }
 
 export interface VocabularyTerm {

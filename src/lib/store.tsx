@@ -53,6 +53,8 @@ export interface HistoryItem {
    */
   tokens?: number;
   cost?: number;
+  /** Ms from ending the recording to the text appearing; null for older rows. */
+  latencyMs: number | null;
 }
 
 export const rewriteToneOptions = [
@@ -637,6 +639,7 @@ function mapHistoryEntry(entry: HistoryEntry): HistoryItem {
     favorited: entry.favorited,
     tokens: entry.tokens,
     cost: entry.cost,
+    latencyMs: entry.latency_ms,
   };
 }
 

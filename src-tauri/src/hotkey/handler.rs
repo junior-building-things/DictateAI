@@ -166,6 +166,7 @@ pub fn on_released(
     if !app_state.is_recording() {
         return None;
     }
+    *app_state.released_at.lock().unwrap() = Some(Instant::now());
 
     // Check duration - ignore very short presses
     let duration = {
@@ -363,6 +364,7 @@ fn schedule_max_duration_autostop(app: &AppHandle, app_state: &AppState, session
                 "Recording reached max duration ({}s); auto-stopping.",
                 max_ms / 1000
             );
+            *app_state.released_at.lock().unwrap() = Some(Instant::now());
             if sound_enabled(&app_state) {
                 let _ = feedback::play_stop();
             }

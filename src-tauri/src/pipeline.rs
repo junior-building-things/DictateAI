@@ -542,9 +542,9 @@ async fn run_inner(
 
     // Step 4: Save to history
     ensure_run_current(state, run_id)?;
-    {
+    let history_id = {
         let db = state.db.lock().unwrap();
-        history::insert_entry(
+        let id = history::insert_entry(
             &db,
             &raw_text,
             &rewritten,
@@ -559,7 +559,8 @@ async fn run_inner(
                 let _ = vocabulary::increment_use_count(&db, term.id);
             }
         }
-    }
+        id
+    };
 
     // Step 5: Deliver output to the user
     let auto_paste = {
@@ -609,6 +610,15 @@ async fn run_inner(
     ensure_run_current(state, run_id)?;
     if sound_enabled(state) {
         let _ = feedback::play_complete();
+    }
+    // Release-to-text latency: from ending the recording until the text is
+    // typed or on the clipboard. Recorded before `pipeline-complete`, which
+    // is what makes the UI reload history.
+    if let Some(released_at) = state.released_at.lock().unwrap().take() {
+        let latency_ms = released_at.elapsed().as_millis() as i64;
+        let db = state.db.lock().unwrap();
+        let _ = history::set_latency(&db, history_id, latency_ms);
+        log::info!("Release-to-text latency: {} ms", latency_ms);
     }
     let _ = app.emit("pipeline-complete", &rewritten);
 

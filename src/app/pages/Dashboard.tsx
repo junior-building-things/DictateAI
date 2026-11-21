@@ -20,10 +20,6 @@ const SETTINGS_CHANGED_EVENT = "dictateai-settings-changed";
  * link so the user lands directly on the right pane. */
 const SETTINGS_TAB_STORAGE_KEY = "dictateai.settingsTab";
 
-/** Words spoken per second baseline used to convert dictated words into a
- * "time saved vs. typing" estimate. 0.5s/word ≈ typing at ~120 wpm. */
-const SECONDS_SAVED_PER_WORD = 0.5;
-
 export const Dashboard = () => {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -146,7 +142,14 @@ export const Dashboard = () => {
     () => last7d.reduce((acc, entry) => acc + (entry.cost ?? 0), 0),
     [last7d],
   );
-  const timeSaved = useMemo(() => formatDuration(words7d * SECONDS_SAVED_PER_WORD), [words7d]);
+  // Average release-to-text latency over dictations that recorded one.
+  const avgLatency7d = useMemo(() => {
+    const latencies = last7d
+      .map((entry) => entry.latencyMs)
+      .filter((ms): ms is number => typeof ms === "number");
+    if (latencies.length === 0) return null;
+    return latencies.reduce((acc, ms) => acc + ms, 0) / latencies.length;
+  }, [last7d]);
 
   const speechLabel = speechModelSettingToLabel(models.speechProvider, models.speechModel);
   const rewriteLabel = rewriteModelSettingToLabel(models.rewriteProvider, models.rewriteModel);
@@ -252,8 +255,8 @@ export const Dashboard = () => {
           <span className="stat-val">{words7d.toLocaleString()}</span>
         </div>
         <div className="stat">
-          <span className="stat-label">{t("timeSavedLabel")}</span>
-          <span className="stat-val">{timeSaved}</span>
+          <span className="stat-label">{t("avgLatencyLabel")}</span>
+          <span className="stat-val">{formatLatency(avgLatency7d)}</span>
         </div>
         <div className="stat">
           <span className="stat-label">{t("tokensLabel")}</span>
@@ -305,14 +308,11 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-/** Format a duration in seconds as a compact "X min" / "X.Y h" label. Picks
- * the larger unit once the value crosses an hour to keep the stat tile short. */
-function formatDuration(totalSeconds: number): string {
-  if (totalSeconds < 60) return `${Math.round(totalSeconds)} s`;
-  const minutes = totalSeconds / 60;
-  if (minutes < 60) return `${Math.round(minutes)} min`;
-  const hours = minutes / 60;
-  return `${hours.toFixed(1)} h`;
+/** "850 ms" under a second, "1.4 s" above; an em dash until any dictation has a latency. */
+function formatLatency(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
 }
 
 function formatCost(amount: number): string {

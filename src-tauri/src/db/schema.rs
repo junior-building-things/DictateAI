@@ -189,6 +189,23 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
 
     ensure_history_favorited_column(conn)?;
     ensure_history_usage_columns(conn)?;
+    ensure_history_latency_column(conn)?;
+
+    Ok(())
+}
+
+fn ensure_history_latency_column(conn: &Connection) -> AppResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(transcription_history)")?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if !columns.iter().any(|column| column == "latency_ms") {
+        conn.execute(
+            "ALTER TABLE transcription_history ADD COLUMN latency_ms INTEGER",
+            [],
+        )?;
+    }
 
     Ok(())
 }
@@ -302,6 +319,19 @@ mod tests {
         conn.execute("UPDATE settings SET value = 'gpt-4o-mini-transcribe' WHERE key = 'speech_model'", []).unwrap();
         run_migrations(&conn).unwrap();
         assert_eq!(get("speech_model"), "gpt-transcribe");
+    }
+
+    #[test]
+    fn history_round_trips_latency() {
+        use crate::db::history;
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let id = history::insert_entry(&conn, "raw", "clean", "m", 1000, 0, 0.0).unwrap();
+        let (entries, _) = history::get_page(&conn, 0, 10).unwrap();
+        assert_eq!(entries[0].latency_ms, None);
+        history::set_latency(&conn, id, 842).unwrap();
+        let (entries, _) = history::get_page(&conn, 0, 10).unwrap();
+        assert_eq!(entries[0].latency_ms, Some(842));
     }
 
     #[test]

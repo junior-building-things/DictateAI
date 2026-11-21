@@ -31,6 +31,10 @@ pub struct AppState {
     /// empty rewrite). Always 1 in practice — kept as a usize for future
     /// flexibility if we go back to a multi-grapheme placeholder.
     pub pending_placeholder: Mutex<Option<usize>>,
+    /// When the user ended the recording (hotkey release, second toggle
+    /// press, manual stop or max-duration auto-stop). The pipeline measures
+    /// release-to-text latency from here once the text is delivered.
+    pub released_at: Mutex<Option<std::time::Instant>>,
 }
 
 impl AppState {
@@ -43,6 +47,7 @@ impl AppState {
             parakeet_engine: Mutex::new(None),
             local_llm: Mutex::new(None),
             pending_placeholder: Mutex::new(None),
+            released_at: Mutex::new(None),
         }
     }
 

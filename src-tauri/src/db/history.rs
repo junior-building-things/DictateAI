@@ -19,6 +19,9 @@ pub struct HistoryEntry {
     /// plus rewrite-phase per-token charge. 0.0 for fully-local pipelines.
     #[serde(rename = "cost")]
     pub cost_usd: f64,
+    /// Milliseconds from ending the recording to the text being delivered.
+    /// `None` for rows from before this was recorded.
+    pub latency_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,7 +59,7 @@ pub fn get_page(
     let offset = page * per_page;
     let mut stmt = conn.prepare(
         "SELECT id, raw_text, rewritten, model_used, duration_ms, created_at, favorited,
-                tokens, cost_usd
+                tokens, cost_usd, latency_ms
          FROM transcription_history
          ORDER BY created_at DESC
          LIMIT ?1 OFFSET ?2",
@@ -74,11 +77,20 @@ pub fn get_page(
                 favorited: row.get::<_, i64>(6)? != 0,
                 tokens: row.get(7)?,
                 cost_usd: row.get(8)?,
+                latency_ms: row.get(9)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok((entries, total))
+}
+
+pub fn set_latency(conn: &Connection, id: i64, latency_ms: i64) -> AppResult<()> {
+    conn.execute(
+        "UPDATE transcription_history SET latency_ms = ?1 WHERE id = ?2",
+        rusqlite::params![latency_ms, id],
+    )?;
+    Ok(())
 }
 
 pub fn delete_entry(conn: &Connection, id: i64) -> AppResult<()> {
