@@ -86,6 +86,9 @@ pub async fn rewrite(system: &str, user: &str) -> AppResult<crate::rewrite::Rewr
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        // On timeout the child is dropped; without this it keeps running
+        // inference and competes with the next dictation.
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| AppError::Config(format!("Spawn apple-fm-helper failed: {}", e)))?;
 

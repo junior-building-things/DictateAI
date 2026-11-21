@@ -1,7 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
+import { errorMessage } from "./utils";
 import {
   deleteHistoryEntry,
   getHistory,
@@ -127,7 +129,7 @@ const defaultModels: ModelsState = {
 };
 
 const defaultHotkeySettings: HotkeyState = {
-  hotkey: "⌥ + Space",
+  hotkey: "Right Option",
   mode: "hold",
   autoPaste: true,
   autoAddVocabulary: true,
@@ -146,6 +148,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   const tRef = useRef(t);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  // Read by toggleFavorite: values assigned inside a setState updater aren't
+  // reliably available synchronously, since React may defer the updater.
+  const historyRef = useRef(history);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
   const [rewriteRules, setRewriteRulesState] = useState<RewriteRulesState>(defaultRewriteRules);
   const [models, setModelsState] = useState<ModelsState>(defaultModels);
   const [hotkeySettings, setHotkeySettingsState] = useState<HotkeyState>(defaultHotkeySettings);
@@ -157,10 +165,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const refreshHistory = useCallback(async () => {
     try {
-      const [entries] = await getHistory(0, 200);
+      const entries = await getAllHistory();
       setHistory(entries.map((entry) => mapHistoryEntry(entry)));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to load history.");
+      toast.error(errorMessage(error, "Unable to load history."));
     }
   }, []);
 
@@ -169,9 +177,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const load = async () => {
       try {
-        const [settings, historyPage] = await Promise.all([
+        const [settings, historyEntries] = await Promise.all([
           getSettings(),
-          getHistory(0, 200),
+          getAllHistory(),
         ]);
         if (!active) {
           return;
@@ -185,12 +193,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           void persistModels(nextModels);
         }
         setHotkeySettingsState(deriveHotkeyState(settingsMap));
-        const nextHistory = historyPage[0].map((entry) => mapHistoryEntry(entry));
+        const nextHistory = historyEntries.map((entry) => mapHistoryEntry(entry));
         setHistory(nextHistory);
-        void migrateLegacyFavorites(historyPage[0], setHistory);
+        void migrateLegacyFavorites(historyEntries, setHistory);
       } catch (error) {
         if (active) {
-          toast.error(error instanceof Error ? error.message : "Unable to load app settings.");
+          toast.error(errorMessage(error, "Unable to load app settings."));
         }
       }
     };
@@ -203,8 +211,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    // Set once an update is downloaded; it applies on the next launch, so
+    // there's nothing more to check for until then.
+    let installed = false;
 
-    const runUpdateCheck = async () => {
+    const runUpdateCheck = async (showErrors: boolean) => {
+      if (installed) {
+        return;
+      }
       try {
         const version = await getVersion().catch(() => tRef.current("version").replace(/^v/, ""));
         if (!active) {
@@ -296,7 +310,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: "ready",
           downloadProgress: 100,
         });
-        toast.info(tRef.current("updateReadyOnNextLaunchToast", { version: update.version }));
+        installed = true;
+        toast.info(tRef.current("updateReadyOnNextLaunchToast", { version: update.version }), {
+          duration: Infinity,
+          action: {
+            label: tRef.current("restartNow"),
+            onClick: () => void relaunch(),
+          },
+        });
         await update.close().catch(() => undefined);
       } catch (error) {
         if (!active) {
@@ -308,14 +329,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: "error",
           downloadProgress: null,
         }));
-        toast.error(error instanceof Error ? error.message : tRef.current("unableToCheckForUpdates"));
+        // Background checks fail quietly (e.g. offline) rather than toasting
+        // every six hours.
+        if (showErrors) {
+          toast.error(errorMessage(error, tRef.current("unableToCheckForUpdates")));
+        }
       }
     };
 
-    void runUpdateCheck();
+    void runUpdateCheck(true);
+    // DictateAI lives in the menu bar and is rarely quit, so a launch-only
+    // check would leave long-running copies on an old version.
+    const interval = window.setInterval(() => void runUpdateCheck(false), UPDATE_CHECK_INTERVAL_MS);
 
     return () => {
       active = false;
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -324,40 +353,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await deleteHistoryEntry(id);
       setHistory((previous) => previous.filter((item) => item.id !== id));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to delete history entry.");
+      toast.error(errorMessage(error, "Unable to delete history entry."));
     }
   }, []);
 
   const toggleFavorite = useCallback(async (id: number) => {
-    let previousFavorited: boolean | null = null;
-    let nextFavorited: boolean | null = null;
-
-    setHistory((previous) =>
-      previous.map((item) => {
-        if (item.id !== id) {
-          return item;
-        }
-
-        const updatedFavorited = !item.favorited;
-        previousFavorited = item.favorited;
-        nextFavorited = updatedFavorited;
-        return { ...item, favorited: updatedFavorited };
-      }),
-    );
-
-    if (previousFavorited === null || nextFavorited === null) {
+    const target = historyRef.current.find((item) => item.id === id);
+    if (!target) {
       return;
     }
+    const previousFavorited = target.favorited;
+    const nextFavorited = !previousFavorited;
+
+    setHistory((previous) =>
+      previous.map((item) => (item.id === id ? { ...item, favorited: nextFavorited } : item)),
+    );
 
     try {
       await setHistoryFavorite(id, nextFavorited);
     } catch (error) {
       setHistory((previous) =>
         previous.map((item) =>
-          item.id === id ? { ...item, favorited: previousFavorited as boolean } : item,
+          item.id === id ? { ...item, favorited: previousFavorited } : item,
         ),
       );
-      toast.error(error instanceof Error ? error.message : "Unable to update favorite.");
+      toast.error(errorMessage(error, "Unable to update favorite."));
     }
   }, []);
 
@@ -368,7 +388,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         previous.map((item) => (item.id === id ? { ...item, rewritten } : item)),
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to update history entry.");
+      toast.error(errorMessage(error, "Unable to update history entry."));
     }
   }, []);
 
@@ -464,9 +484,26 @@ function deriveModels(settings: Map<string, string>): ModelsState {
   return { speechProvider, speechModel, rewriteProvider, rewriteModel };
 }
 
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Every stored history row. The Dashboard's 7-day totals and History's search
+ * and favorites filter all work on this list, so a capped page under-counted
+ * heavy users and hid older starred items. Retention (30 days, plus starred)
+ * keeps it bounded.
+ */
+async function getAllHistory(): Promise<HistoryEntry[]> {
+  const [entries, total] = await getHistory(0, 500);
+  if (total <= entries.length) {
+    return entries;
+  }
+  const [allEntries] = await getHistory(0, total);
+  return allEntries;
+}
+
 function deriveHotkeyState(settings: Map<string, string>): HotkeyState {
   return {
-    hotkey: displayHotkeyFromTauri(settings.get("hotkey") || "Alt+Space"),
+    hotkey: displayHotkeyFromTauri(settings.get("hotkey") || "Right Option"),
     mode: settings.get("hotkey_mode") === "toggle" ? "toggle" : "hold",
     autoPaste: readBooleanSetting(
       settings,
@@ -491,7 +528,7 @@ async function persistRewriteRules(next: RewriteRulesState) {
       saveSetting("rewrite_system_prompt", next.customPrompt),
     ]);
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "Unable to save rewrite rules.");
+    toast.error(errorMessage(error, "Unable to save rewrite rules."));
   }
 }
 
@@ -506,7 +543,7 @@ async function persistModels(next: ModelsState) {
 
     await Promise.all(writes);
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "Unable to save model settings.");
+    toast.error(errorMessage(error, "Unable to save model settings."));
   }
 }
 
@@ -528,7 +565,7 @@ async function persistHotkeySettings(
     ]);
   } catch (error) {
     setState(previous);
-    toast.error(error instanceof Error ? error.message : "Unable to save hotkey settings.");
+    toast.error(errorMessage(error, "Unable to save hotkey settings."));
   }
 }
 

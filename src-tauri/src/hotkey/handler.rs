@@ -49,6 +49,12 @@ pub fn on_pressed(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppSt
         return;
     }
 
+    if let Some(message) = processing_mode::parakeet_language_error(app_state) {
+        log::info!("Hotkey ignored: {}", message);
+        let _ = tauri::Emitter::emit(app, "pipeline-error", message);
+        return;
+    }
+
     let Some(mode_resolution) = processing_mode::resolve(app, app_state) else {
         log::info!("Hotkey ignored: no processing mode is currently available.");
         return;
@@ -170,7 +176,7 @@ pub fn on_released(
     if let Some(dur) = duration {
         if dur < MIN_RECORDING_DURATION_MS {
             log::info!("Press too short ({}ms), ignoring", dur);
-            app_state.set_state(STATE_IDLE);
+            return_to_idle(app, app_state);
             cleanup_placeholder(app_state);
             // Still need to stop the stream
             let _ = hotkey_state.audio_capture.stop();
@@ -190,7 +196,7 @@ pub fn on_released(
         Ok(audio_data) => {
             if audio_data.is_empty() {
                 log::warn!("No audio data captured");
-                app_state.set_state(STATE_IDLE);
+                return_to_idle(app, app_state);
                 cleanup_placeholder(app_state);
                 if sound_enabled(app_state) {
                     let _ = feedback::play_error();
@@ -214,7 +220,8 @@ pub fn on_released(
         }
         Err(e) => {
             log::error!("Failed to stop recording: {}", e);
-            app_state.set_state(STATE_IDLE);
+            return_to_idle(app, app_state);
+            let _ = tauri::Emitter::emit(app, "pipeline-error", e.to_string());
             cleanup_placeholder(app_state);
             if sound_enabled(app_state) {
                 let _ = feedback::play_error();
@@ -222,6 +229,13 @@ pub fn on_released(
             None
         }
     }
+}
+
+/// Every path back to idle must tell the UI, or its status stays on
+/// "listening" and manual start refuses to run.
+fn return_to_idle(app: &AppHandle, app_state: &AppState) {
+    app_state.set_state(STATE_IDLE);
+    let _ = tauri::Emitter::emit(app, "state-changed", "idle");
 }
 
 fn sound_enabled(app_state: &AppState) -> bool {
@@ -291,11 +305,11 @@ fn read_pending_placeholder(app: &tauri::AppHandle) -> Option<usize> {
 /// Cancel an in-flight recording without going through the pipeline.
 /// Used by `right_option` when the user presses another key during a
 /// hold-mode recording — we don't want to transcribe the partial buffer.
-pub fn abort_recording(hotkey_state: &HotkeyState, app_state: &AppState) {
+pub fn abort_recording(app: &AppHandle, hotkey_state: &HotkeyState, app_state: &AppState) {
     if !app_state.is_recording() {
         return;
     }
-    app_state.set_state(STATE_IDLE);
+    return_to_idle(app, app_state);
     cleanup_placeholder(app_state);
     let _ = hotkey_state.audio_capture.stop();
     log::info!("Right-Option: recording aborted (another key pressed during hold)");
@@ -305,9 +319,13 @@ pub fn abort_recording(hotkey_state: &HotkeyState, app_state: &AppState) {
 /// reaching the pipeline (short press, max duration, capture error).
 fn cleanup_placeholder(app_state: &AppState) {
     if let Some(len) = app_state.pending_placeholder.lock().unwrap().take() {
-        if let Err(e) = paste::simulate::delete_placeholder(len) {
-            log::warn!("Could not delete recording placeholder: {}", e);
-        }
+        // Off-thread: callers include the shortcut callback, where the chord
+        // is still down and the delete waits for it to be released.
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(e) = paste::simulate::delete_placeholder(len) {
+                log::warn!("Could not delete recording placeholder: {}", e);
+            }
+        });
     }
 }
 
@@ -366,6 +384,7 @@ fn schedule_max_duration_autostop(app: &AppHandle, app_state: &AppState, session
                     log::error!("Auto-stop: failed to stop recording: {}", e);
                     app_state.set_state(STATE_IDLE);
                     let _ = tauri::Emitter::emit(&app, "state-changed", "idle");
+                    let _ = tauri::Emitter::emit(&app, "pipeline-error", e.to_string());
                     cleanup_placeholder(&app_state);
                     return;
                 }

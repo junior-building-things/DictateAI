@@ -137,6 +137,10 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
     // `Some(t)` whenever a stream is open with no recording in flight — `t`
     // is when the idle countdown started.
     let mut idle_since: Option<Instant> = None;
+    // Why the last `Start` couldn't open the mic. `start()` doesn't wait for
+    // a reply (it runs on the hotkey path), so the failure is reported by
+    // the matching `Stop` instead of being swallowed.
+    let mut open_error: Option<String> = None;
 
     loop {
         // With no stream open there's nothing to release, so block forever.
@@ -169,12 +173,14 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
         match cmd {
             AudioCommand::Start => {
                 idle_since = None;
+                open_error = None;
                 if active_stream.is_none() {
                     match create_input_stream() {
                         Ok((stream, sample_rate, new_state)) => {
                             device_sample_rate = sample_rate;
                             if let Err(e) = stream.play() {
                                 log::error!("Failed to play stream: {}", e);
+                                open_error = Some(e.to_string());
                                 continue;
                             }
                             state = Some(new_state);
@@ -187,6 +193,7 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
                         }
                         Err(e) => {
                             log::error!("Failed to create input stream: {}", e);
+                            open_error = Some(e.to_string());
                             continue;
                         }
                     }
@@ -199,6 +206,13 @@ fn audio_thread_main(cmd_rx: mpsc::Receiver<AudioCommand>) {
                 log::info!("Recording started");
             }
             AudioCommand::Stop(result_tx) => {
+                if let Some(e) = open_error.take() {
+                    let _ = result_tx.send(Err(AppError::Audio(format!(
+                        "Couldn't open the microphone: {}",
+                        e
+                    ))));
+                    continue;
+                }
                 let samples = state
                     .as_ref()
                     .map(|s| s.lock().unwrap().end_recording())

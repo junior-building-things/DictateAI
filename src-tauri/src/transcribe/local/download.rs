@@ -236,11 +236,36 @@ fn emit_progress(
 
 /// Extract a `.tar.bz2` archive into `models_dir/<target_name>/`, stripping the
 /// top-level directory `archive_root` that the upstream tarball wraps things in.
+///
+/// Extracts into a sibling `.partial` dir and renames it into place only once
+/// every entry is written. Unpacking straight into the real dir could leave a
+/// truncated ONNX that `is_complete()` (an existence check) accepts, and
+/// loading that aborts the app at startup prewarm on every launch.
 fn extract_tar_bz2_stripping_root(
     archive_path: &Path,
     models_dir: &Path,
     archive_root: &str,
     target_name: &str,
+) -> AppResult<()> {
+    let partial_root = models_dir.join(format!("{}.partial", target_name));
+    let _ = fs::remove_dir_all(&partial_root);
+    if let Err(e) = unpack_tar_bz2_stripping_root(archive_path, &partial_root, archive_root) {
+        let _ = fs::remove_dir_all(&partial_root);
+        return Err(e);
+    }
+    let target_root = models_dir.join(target_name);
+    if target_root.exists() {
+        fs::remove_dir_all(&target_root)
+            .map_err(|e| AppError::Config(format!("Replace model dir failed: {}", e)))?;
+    }
+    fs::rename(&partial_root, &target_root)
+        .map_err(|e| AppError::Config(format!("Finalize model dir failed: {}", e)))
+}
+
+fn unpack_tar_bz2_stripping_root(
+    archive_path: &Path,
+    target_root: &Path,
+    archive_root: &str,
 ) -> AppResult<()> {
     use bzip2::read::BzDecoder;
     use std::fs::File;
@@ -252,8 +277,7 @@ fn extract_tar_bz2_stripping_root(
     let decoder = BzDecoder::new(BufReader::new(file));
     let mut archive = Archive::new(decoder);
 
-    let target_root = models_dir.join(target_name);
-    fs::create_dir_all(&target_root)
+    fs::create_dir_all(target_root)
         .map_err(|e| AppError::Config(format!("Create target dir failed: {}", e)))?;
 
     let archive_root_prefix = format!("{}/", archive_root);

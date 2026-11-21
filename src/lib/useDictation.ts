@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
+import { errorMessage } from "./utils";
 import { startManualRecording, stopManualRecording } from "./commands";
 import { useAppStore } from "./store";
 import { getMicrophonePermissionState, type MicrophonePermissionState } from "./ui";
@@ -134,7 +135,7 @@ function useDictation() {
       await ensureMicrophonePermission();
       await startManualRecording();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to start dictation.");
+      toast.error(errorMessage(error, "Unable to start dictation."));
     }
   }, [ensureMicrophonePermission, status]);
 
@@ -146,7 +147,7 @@ function useDictation() {
     try {
       await stopManualRecording();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to stop dictation.");
+      toast.error(errorMessage(error, "Unable to stop dictation."));
     }
   }, [status]);
 

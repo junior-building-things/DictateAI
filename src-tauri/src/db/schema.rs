@@ -3,6 +3,14 @@ use rusqlite::Connection;
 use crate::error::AppResult;
 
 pub fn run_migrations(conn: &Connection) -> AppResult<()> {
+    // Migrations replay on every launch; seed vocabulary only on a fresh DB
+    // so terms the user deleted don't come back.
+    let fresh_vocabulary: bool = conn.query_row(
+        "SELECT NOT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'vocabulary')",
+        [],
+        |row| row.get(0),
+    )?;
+
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS transcription_history (
@@ -33,10 +41,6 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_vocabulary_term
             ON vocabulary(term);
-
-        INSERT OR IGNORE INTO vocabulary (term, phonetic, definition, category) VALUES
-            ('Aeolus', 'A-less', 'An internal dashboarding tool.', 'company'),
-            ('Doubao', 'Doe-bao', 'AI model and chatbot platform by ByteDance.', 'company');
 
         CREATE TABLE IF NOT EXISTS settings (
             key         TEXT PRIMARY KEY,
@@ -91,9 +95,14 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         UPDATE settings SET value = '1200'
             WHERE key = 'max_recording_seconds' AND value = '120';
 
+        -- 'NVIDIA' is also the live provider for local Parakeet, so only
+        -- migrate it when the model isn't one of the local parakeet-* ids.
         UPDATE settings SET value = 'OpenAI'
             WHERE key = 'speech_provider'
-              AND value IN ('Browser', 'NVIDIA', 'Doubao', 'BytePlus');
+              AND (value IN ('Browser', 'Doubao', 'BytePlus')
+                   OR (value = 'NVIDIA'
+                       AND COALESCE((SELECT value FROM settings WHERE key = 'speech_model'), '')
+                           NOT LIKE 'parakeet-%'));
 
         UPDATE settings SET value = 'gpt-4o-mini-transcribe'
             WHERE key = 'speech_model'
@@ -154,6 +163,14 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         ",
     )?;
 
+    if fresh_vocabulary {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO vocabulary (term, phonetic, definition, category) VALUES
+                ('Aeolus', 'A-less', 'An internal dashboarding tool.', 'company'),
+                ('Doubao', 'Doe-bao', 'AI model and chatbot platform by ByteDance.', 'company');",
+        )?;
+    }
+
     ensure_history_favorited_column(conn)?;
     ensure_history_usage_columns(conn)?;
 
@@ -200,4 +217,55 @@ fn ensure_history_usage_columns(conn: &Connection) -> AppResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider_after_migrations(speech_model: &str) -> String {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute(
+            "UPDATE settings SET value = 'NVIDIA' WHERE key = 'speech_provider'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE settings SET value = ?1 WHERE key = 'speech_model'",
+            [speech_model],
+        )
+        .unwrap();
+        // Migrations replay on every launch.
+        run_migrations(&conn).unwrap();
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'speech_provider'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn local_parakeet_provider_survives_relaunch() {
+        assert_eq!(provider_after_migrations("parakeet-tdt-0.6b-v2-int8"), "NVIDIA");
+        assert_eq!(provider_after_migrations("parakeet-tdt-0.6b-v3-int8"), "NVIDIA");
+    }
+
+    #[test]
+    fn deleted_seed_vocabulary_stays_deleted() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute("DELETE FROM vocabulary WHERE term = 'Aeolus'", []).unwrap();
+        run_migrations(&conn).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM vocabulary WHERE term = 'Aeolus'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn legacy_nvidia_cloud_provider_still_migrates() {
+        assert_eq!(provider_after_migrations("nvidia-parakeet-tdt-0.6b-v2"), "OpenAI");
+    }
 }

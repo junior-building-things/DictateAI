@@ -7,7 +7,6 @@ use crate::rewrite::RewriteOutcome;
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
-    temperature: f32,
 }
 
 #[derive(Serialize)]
@@ -74,7 +73,6 @@ pub async fn rewrite(
                 content: user_message.to_string(),
             },
         ],
-        temperature: 0.2,
     };
 
     let response = client

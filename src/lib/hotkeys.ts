@@ -1,5 +1,6 @@
 const DISPLAY_TO_TAURI: Record<string, string> = {
   "⌘": "CommandOrControl",
+  "⌃": "Control",
   "⌥": "Alt",
   Shift: "Shift",
   Space: "Space",
@@ -12,7 +13,8 @@ const DISPLAY_TO_TAURI: Record<string, string> = {
 const TAURI_TO_DISPLAY: Record<string, string> = {
   CommandOrControl: "⌘",
   Command: "⌘",
-  Control: "⌘",
+  Control: "⌃",
+  Ctrl: "⌃",
   Alt: "⌥",
   Option: "⌥",
   Shift: "Shift",

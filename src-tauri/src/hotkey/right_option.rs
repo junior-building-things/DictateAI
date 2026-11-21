@@ -321,7 +321,7 @@ fn mark_cancelled(app: &AppHandle, state: &Arc<Mutex<MonitorState>>) {
     if should_abort {
         let hk = app.state::<HotkeyState>();
         let app_state = app.state::<AppState>();
-        handler::abort_recording(&hk, &app_state);
+        handler::abort_recording(app, &hk, &app_state);
     }
 }
 

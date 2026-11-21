@@ -19,6 +19,74 @@ pub fn insert_text_slow(text: &str) -> AppResult<()> {
     insert_text_with_delay(text, 100)
 }
 
+/// enigo posts events from the combined session state, so a modifier still
+/// physically held (the hotkey chord, typically) merges into every synthetic
+/// key: Backspace becomes Cmd+Backspace and deletes a whole line. Wait for the
+/// modifiers to come up; if they don't, refuse rather than fire shortcuts.
+fn wait_for_modifiers_released() -> AppResult<()> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+    while modifiers_held() {
+        if std::time::Instant::now() >= deadline {
+            return Err(AppError::Clipboard(
+                "A modifier key is still held, so typing was skipped.".into(),
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn modifiers_held() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceFlagsState(state_id: i32) -> u64;
+    }
+    const HID_SYSTEM_STATE: i32 = 1;
+    // Shift | Control | Option | Command (Caps Lock deliberately excluded).
+    const MODIFIER_MASK: u64 = 0x0002_0000 | 0x0004_0000 | 0x0008_0000 | 0x0010_0000;
+    unsafe { CGEventSourceFlagsState(HID_SYSTEM_STATE) & MODIFIER_MASK != 0 }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn modifiers_held() -> bool {
+    false
+}
+
+/// enigo 0.2 posts text in 20-char chunks (the CGEvent unicode-string
+/// limit) and, when a chunk starts with a line break, types "\u{200B}\n" —
+/// leaving an invisible zero-width space in the document. Pre-split so no
+/// piece is longer than 20 chars or starts with a line break; enigo then
+/// sends each piece as a single event untouched.
+fn unicode_chunks(text: &str) -> Vec<String> {
+    const MAX: usize = 20;
+    if !text.contains(['\n', '\r']) {
+        return vec![text.to_string()];
+    }
+    let is_break = |c: &char| matches!(c, '\n' | '\r');
+    let mut chunks = Vec::new();
+    let mut current: Vec<char> = Vec::new();
+    for c in text.chars() {
+        if current.len() == MAX {
+            // Carry the tail from the last non-break char onward, so the next
+            // piece starts with that char rather than with a line break.
+            let split = if is_break(&c) {
+                current.iter().rposition(|ch| !is_break(ch)).filter(|&i| i > 0)
+            } else {
+                None
+            };
+            let carry = split.map(|i| current.split_off(i)).unwrap_or_default();
+            chunks.push(current.iter().collect());
+            current = carry;
+        }
+        current.push(c);
+    }
+    if !current.is_empty() {
+        chunks.push(current.iter().collect());
+    }
+    chunks
+}
+
 fn insert_text_with_delay(text: &str, mac_delay_ms: u32) -> AppResult<()> {
     if text.is_empty() {
         return Ok(());
@@ -31,15 +99,19 @@ fn insert_text_with_delay(text: &str, mac_delay_ms: u32) -> AppResult<()> {
         ));
     }
 
+    wait_for_modifiers_released()?;
+
     let typed_settings = Settings {
         mac_delay: mac_delay_ms,
         ..Settings::default()
     };
     let mut enigo = Enigo::new(&typed_settings)
         .map_err(|e| AppError::Clipboard(format!("Failed to create input simulator: {}", e)))?;
-    enigo
-        .text(text)
-        .map_err(|e| AppError::Clipboard(format!("Failed to insert text: {}", e)))?;
+    for chunk in unicode_chunks(text) {
+        enigo
+            .text(&chunk)
+            .map_err(|e| AppError::Clipboard(format!("Failed to insert text: {}", e)))?;
+    }
     log::info!(
         "Text inserted directly into focused field ({} chars, mac_delay={}ms)",
         text.len(),
@@ -72,6 +144,7 @@ fn replace_placeholder_inner(len: usize, replacement: &str, slow_typing: bool) -
     // e.g. "Rewriting..." in the final output. Backspaces are modifier-free
     // and deterministic; mac_delay: 1 keeps the deletion near-instant.
     if len > 0 {
+        wait_for_modifiers_released()?;
         let fast_settings = Settings {
             mac_delay: 1,
             ..Settings::default()
@@ -291,6 +364,22 @@ fn macos_microphone_permission_state() -> &'static str {
             1 | 2 => "denied",
             3 => "granted",
             _ => "unknown",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunks_never_start_with_a_line_break() {
+        let text = format!("{}\n\nSecond paragraph that is long enough\n{}", "a".repeat(20), "b".repeat(19));
+        let chunks = unicode_chunks(&text);
+        assert_eq!(chunks.concat(), text);
+        for chunk in &chunks {
+            assert!(chunk.chars().count() <= 20);
+            assert!(!chunk.starts_with(['\n', '\r']), "chunk starts with a break: {:?}", chunk);
         }
     }
 }

@@ -22,7 +22,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use block::ConcreteBlock;
+use block::{ConcreteBlock, RcBlock};
 use objc::runtime::Object;
 use objc::{class, msg_send, sel, sel_impl};
 
@@ -46,6 +46,10 @@ pub struct SendKeyMonitor {
 struct Inner {
     global_handle: Option<usize>,
     local_handle: Option<usize>,
+    // Our references to the heap blocks AppKit retains. Released in `Drop`
+    // after the monitors are removed, which frees the captured callback.
+    global_block: Option<RcBlock<(*mut Object,), ()>>,
+    local_block: Option<RcBlock<(*mut Object,), *mut Object>>,
 }
 
 impl SendKeyMonitor {
@@ -92,15 +96,14 @@ impl SendKeyMonitor {
                 handler: &*local_block]
         };
 
-        // Blocks need to outlive `new()` — the AX dispatcher keeps copies
-        // and calls them per event. One-time leak, not per-event.
-        std::mem::forget(global_block);
-        std::mem::forget(local_block);
-
+        // A monitor is created per dictation, so the blocks (and the
+        // callback they capture) must be released on drop, not leaked.
         Self {
             inner: Mutex::new(Inner {
                 global_handle: Some(global_handle as usize),
                 local_handle: Some(local_handle as usize),
+                global_block: Some(global_block),
+                local_block: Some(local_block),
             }),
         }
     }
@@ -122,6 +125,8 @@ impl Drop for SendKeyMonitor {
                 let _: () = msg_send![nsevent_class, removeMonitor: obj];
             }
         }
+        inner.global_block.take();
+        inner.local_block.take();
     }
 }
 

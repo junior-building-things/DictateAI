@@ -36,6 +36,21 @@ const MAX_NORMALIZED_DISTANCE = 0.65;
  */
 const REWRITE_RATIO_LIMIT = 0.5;
 
+/**
+ * Everyday words a user corrects for grammar, not because the transcriber
+ * misheard a name (their -> there, then -> than). Lowercase corrections to
+ * these are never learned; capitalized or jargon terms still are.
+ */
+const COMMON_WORDS = new Set(
+  (
+    "the and for are but not you all any can had her was one our out day get has him his how man new now old see two way who boy did its let put say she too use " +
+    "their there they're theyre then than your you're youre it's were where wear we're hear here know knew right write whether weather which witch " +
+    "affect effect accept except lose loose four buy bye won hour wait weight week weak piece peace break brake quite quiet " +
+    "this that with have from they will would there what about which when make like time just him into year good some could them other " +
+    "only come over think also back after work first well even want because any these give most"
+  ).split(" "),
+);
+
 /** Category stamped on auto-learned terms, so their origin stays visible. */
 const LEARNED_CATEGORY = "learned";
 
@@ -100,8 +115,10 @@ function findEditedRegion(originalText: string, fieldValue: string): string {
 }
 
 /**
- * Word-level LCS alignment, reading a dropped word immediately followed by an
- * inserted one as a substitution.
+ * Word-level LCS alignment. Each run of dropped and inserted words between
+ * two matches is read as substitutions when the counts agree, paired in
+ * order — so correcting two adjacent words ("Shunade O'Conner" -> "Sinead
+ * O'Connor") yields both pairs.
  */
 function findSubstitutions(origWords: string[], editedWords: string[]): [string, string][] {
   const m = origWords.length;
@@ -134,13 +151,25 @@ function findSubstitutions(origWords: string[], editedWords: string[]): [string,
   }
 
   const subs: [string, string][] = [];
-  for (let k = 0; k < aligned.length - 1; k++) {
-    const [origWord, editedWord] = aligned[k];
-    const [nextOrig, nextEdited] = aligned[k + 1];
-    if (origWord !== null && editedWord === null && nextOrig === null && nextEdited !== null) {
-      subs.push([origWord, nextEdited]);
+  let dropped: string[] = [];
+  let inserted: string[] = [];
+  const flush = () => {
+    if (dropped.length === inserted.length) {
+      dropped.forEach((word, index) => subs.push([word, inserted[index]]));
+    }
+    dropped = [];
+    inserted = [];
+  };
+  for (const [origWord, editedWord] of aligned) {
+    if (origWord !== null && editedWord !== null) {
+      flush();
+    } else if (origWord !== null) {
+      dropped.push(origWord);
+    } else if (editedWord !== null) {
+      inserted.push(editedWord);
     }
   }
+  flush();
   return subs;
 }
 
@@ -174,6 +203,7 @@ export function extractCorrections(
     if (known.has(normalized) || seen.has(normalized)) continue;
     if (origWord.toLowerCase() === normalized) continue;
     if (correctedWord.length < MIN_TERM_LENGTH) continue;
+    if (correctedWord === normalized && COMMON_WORDS.has(normalized)) continue;
 
     const distance = editDistance(origWord.toLowerCase(), normalized);
     const maxLength = Math.max(origWord.length, correctedWord.length);

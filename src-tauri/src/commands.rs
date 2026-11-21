@@ -40,6 +40,20 @@ pub fn save_setting(state: State<AppState>, key: String, value: String) -> Resul
 
 #[tauri::command]
 pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> Result<(), String> {
+    let is_right_option = hotkey.eq_ignore_ascii_case(crate::RIGHT_OPTION_SENTINEL);
+
+    // Parse before tearing anything down, so an invalid combo leaves the
+    // current hotkey working.
+    let shortcut: Option<Shortcut> = if is_right_option {
+        None
+    } else {
+        Some(
+            hotkey
+                .parse()
+                .map_err(|e| format!("Invalid hotkey '{}': {}", hotkey, e))?,
+        )
+    };
+
     // Always tear down whichever path is currently active before swapping —
     // otherwise stale registrations stick around and fight the new one.
     let _ = app.global_shortcut().unregister_all();
@@ -52,7 +66,7 @@ pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> 
     // Special sentinel: bare right-Option — goes through the NSEvent
     // monitor, not the global-shortcut plugin (which rejects modifier-only
     // bindings on macOS).
-    if hotkey.eq_ignore_ascii_case(crate::RIGHT_OPTION_SENTINEL) {
+    if is_right_option {
         #[cfg(target_os = "macos")]
         {
             app.state::<crate::hotkey::right_option::RightOptionMonitor>()
@@ -66,16 +80,37 @@ pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> 
         }
     }
 
-    let shortcut: Shortcut = hotkey
-        .parse()
-        .map_err(|e| format!("Invalid hotkey '{}': {}", hotkey, e))?;
-
-    app.global_shortcut()
-        .register(shortcut)
-        .map_err(|e| format!("Failed to register new hotkey: {}", e))?;
+    let shortcut = shortcut.expect("parsed above for non-Right-Option hotkeys");
+    if let Err(e) = app.global_shortcut().register(shortcut) {
+        restore_previous_hotkey(&app, &state);
+        return Err(format!("Failed to register new hotkey: {}", e));
+    }
 
     let db = state.db.lock().unwrap();
     settings::set(&db, "hotkey", &hotkey).map_err(|e| e.to_string())
+}
+
+/// Re-activate the hotkey still stored in the DB after a failed swap, so the
+/// user isn't left with no working hotkey until restart.
+fn restore_previous_hotkey(app: &AppHandle, state: &State<AppState>) {
+    let previous = {
+        let db = state.db.lock().unwrap();
+        settings::get(&db, "hotkey").unwrap_or_default()
+    };
+    if previous.eq_ignore_ascii_case(crate::RIGHT_OPTION_SENTINEL) {
+        #[cfg(target_os = "macos")]
+        app.state::<crate::hotkey::right_option::RightOptionMonitor>()
+            .start(app.clone());
+        return;
+    }
+    match previous.parse::<Shortcut>() {
+        Ok(shortcut) => {
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                log::error!("Failed to restore previous hotkey '{}': {}", previous, e);
+            }
+        }
+        Err(e) => log::error!("Stored hotkey '{}' doesn't parse: {}", previous, e),
+    }
 }
 
 #[tauri::command]

@@ -16,6 +16,7 @@ const SECRET_KEYS: &[&str] = &[
     "alibaba_api_key",
     "gemini_api_key",
     "groq_api_key",
+    "speech_groq_api_key",
     "speech_deepgram_api_key",
     "speech_nvidia_api_key",
     "speech_openai_api_key",

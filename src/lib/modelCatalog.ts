@@ -80,7 +80,7 @@ const speechCatalog: Record<SpeechProvider, ModelOption[]> = {
       label: "parakeet-tdt-0.6b-v2-int8",
       setting: "parakeet-tdt-0.6b-v2-int8",
       description:
-        "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline with Metal acceleration on Apple Silicon.",
+        "On-device NVIDIA Parakeet TDT 0.6B v2 (int8) via sherpa-onnx. Runs offline on the CPU. English only.",
       metrics: {
         latency: "100-300 ms",
         accuracy: "5-7% WER",

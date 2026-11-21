@@ -19,7 +19,8 @@ export const Hotkey = () => {
       event.preventDefault();
 
       const parts: string[] = [];
-      if (event.metaKey || event.ctrlKey) parts.push("⌘");
+      if (event.ctrlKey) parts.push("⌃");
+      if (event.metaKey) parts.push("⌘");
       if (event.altKey) parts.push("⌥");
       if (event.shiftKey) parts.push("Shift");
 

@@ -121,10 +121,40 @@ fn rewrite_ready(state: &AppState) -> bool {
     }
 }
 
+/// Why the selected Parakeet model can't transcribe the spoken language, if
+/// it can't. v2 is English-only; v3 covers 25 European languages but not
+/// Chinese. Fed the wrong language, both emit garbled Latin-script text.
+pub fn parakeet_language_error(state: &AppState) -> Option<String> {
+    let (speech_model, language) = {
+        let db = state.db.lock().unwrap();
+        (
+            settings::get(&db, "speech_model").unwrap_or_default(),
+            settings::get(&db, "language").unwrap_or_else(|_| "en".into()),
+        )
+    };
+    let supported: &[&str] = match speech_model.as_str() {
+        "parakeet-tdt-0.6b-v2-int8" => &["en"],
+        "parakeet-tdt-0.6b-v3-int8" => &[
+            "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it",
+            "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+        ],
+        _ => return None,
+    };
+    let base = language.split(['-', '_']).next().unwrap_or("").to_lowercase();
+    if supported.contains(&base.as_str()) {
+        None
+    } else {
+        Some(format!(
+            "{} can't transcribe the selected spoken language ({}). Pick another speech model in Settings.",
+            speech_model, language
+        ))
+    }
+}
+
 /// Combined status snapshot for the Dashboard.
 pub fn status(app: &AppHandle, state: &AppState) -> ProcessingModeStatus {
     ProcessingModeStatus {
-        speech_ready: resolve(app, state).is_some(),
+        speech_ready: resolve(app, state).is_some() && parakeet_language_error(state).is_none(),
         rewrite_ready: rewrite_ready(state),
     }
 }

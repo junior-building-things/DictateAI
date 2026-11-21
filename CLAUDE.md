@@ -2,21 +2,21 @@
 
 ## Project Overview
 
-A macOS desktop app for **push-to-talk dictation**. Hold a global hotkey to record your microphone, release to transcribe with the configured speech provider, optionally rewrite/clean up the text with an LLM, then auto-paste the result into the active app. Every result is also copied to the clipboard and saved to local SQLite history.
+A macOS desktop app for **push-to-talk dictation**. Hold a global hotkey to record your microphone, release to transcribe with the configured speech provider, optionally rewrite/clean up the text with an LLM, then auto-paste the result into the active app (or copy it to the clipboard when auto-paste is off, or when typing fails). Every result is saved to local SQLite history.
 
 **The flow:**
-1. User holds the global hotkey (default `CommandOrControl+Shift+Space`) — a rolling pre-roll buffer means the start of speech isn't clipped.
+1. User holds the global hotkey (default Right Option, a modifier-only binding handled by `hotkey/right_option.rs`) — a rolling pre-roll buffer is meant to keep the start of speech, but it is empty while `IDLE_STREAM_TIMEOUT` is zero (see `audio/capture.rs`).
 2. Audio is captured; on release it's sent to the selected speech-to-text engine (cloud API or on-device).
 3. The raw transcript is optionally rewritten by an LLM using configurable cleanup rules, a vocabulary list, and phrase mappings.
-4. The final text is auto-pasted into the foreground app (simulated `Cmd+V`, requires Accessibility permission), copied to the clipboard, and stored in history.
-5. Partial transcripts stream into an overlay during recording for live feedback.
+4. The final text is auto-pasted into the foreground app (simulated `Cmd+V`, requires Accessibility permission) — or, with auto-paste off or if typing fails, copied to the clipboard — and stored in history.
+5. In toggle mode a "Listening…" placeholder is typed into the focused field and swapped for the result. Hold mode skips it — the OS hotkey grab swallows injected keystrokes while the key is down.
 
 ## Core Product Principles
 
-- **Latency is the product.** This is a typing replacement — the round trip from hotkey-release to pasted text must feel instant. Engines are pre-warmed at startup and after install. Cloud calls have tight timeouts (speech ~8s, rewrite ~10s).
-- **On-device first where it's good enough.** Local Parakeet STT (via sherpa-onnx, Metal-accelerated) and Apple Foundation Models / llama.cpp rewrite let the app run offline with zero per-use cost. The defaults lean local (speech: NVIDIA/Parakeet on-device; rewrite: Groq).
+- **Latency is the product.** This is a typing replacement — the round trip from hotkey-release to pasted text must feel instant. Engines are pre-warmed at startup and after install. Cloud calls time out at 15s for both speech and rewrite — note this is **not** enough for the 20-minute `max_recording_seconds` cap, see Known Gaps.
+- **On-device first where it's good enough.** Local Parakeet STT (via sherpa-onnx, CPU) and Apple Foundation Models / llama.cpp rewrite let the app run offline with zero per-use cost. Local paths exist but the shipped defaults are cloud: speech `whisper-large-v3-turbo` on Groq, rewrite `gemini-3.5-flash-lite` on Google.
 - **Don't mangle the user's words.** Rewrite is *cleanup*, not paraphrase. Small LLMs are explicitly steered away from wrapping output in quotes or editorializing. Vocabulary terms and phrase mappings exist to keep names/jargon correct.
-- **Stay out of the way.** Runs from the tray/menu bar. The main window is settings + history; daily use is just the hotkey and the overlay.
+- **Stay out of the way.** Runs from the tray/menu bar. The main window is settings + history; daily use is just the hotkey.
 - **Provider-agnostic.** Speech and rewrite are independent, swappable providers. Adding a provider should be a localized change, not a rewrite.
 
 ## Tech Stack
@@ -25,7 +25,7 @@ A macOS desktop app for **push-to-talk dictation**. Hold a global hotkey to reco
 - **Desktop runtime:** Tauri v2 (`@tauri-apps/api`, plugins: `global-shortcut`, `clipboard-manager`, `process`, `updater`)
 - **Backend:** Rust
 - **Database:** SQLite via `rusqlite` (`dictate-ai.db` in the app data dir)
-- **Local STT:** NVIDIA Parakeet TDT 0.6B (v2 / v3, int8) via statically-linked **sherpa-onnx**, Metal on Apple Silicon
+- **Local STT:** NVIDIA Parakeet TDT 0.6B (v2 / v3, int8) via statically-linked **sherpa-onnx**, on the CPU (no GPU provider in the static build)
 - **Local LLM rewrite:** llama.cpp (Metal) and Apple **Foundation Models** (macOS, on-device)
 - **Updates:** Tauri updater reading GitHub Releases `latest.json`
 
@@ -36,19 +36,21 @@ A macOS desktop app for **push-to-talk dictation**. Hold a global hotkey to reco
 - Local (`local/parakeet.rs`): `parakeet-tdt-0.6b-v2-int8`, `parakeet-tdt-0.6b-v3-int8` (downloaded on demand, run offline).
 
 **Rewrite** (`src-tauri/src/rewrite/`):
-- Alibaba `qwen2.5-7b-instruct`, Apple Foundation Models (`apple-fm-system`, on-device macOS), Google Gemini `gemini-2.5-flash-lite` / `gemini-3.1-flash-lite-preview`, Groq `llama-3.1-8b-instant` / `llama-3.3-70b-versatile`, OpenAI `gpt-5-mini` / `gpt-5-nano`, plus local llama.cpp paths.
+- Alibaba `qwen2.5-7b-instruct`, Apple Foundation Models (`apple-fm-system`, on-device macOS), Google Gemini `gemini-3.5-flash-lite` (default), `gemini-3.6-flash`, `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite`, Groq `llama-3.1-8b-instant` / `llama-3.3-70b-versatile`, OpenAI `gpt-5-mini` / `gpt-5-nano`, plus local llama.cpp paths.
 
 The canonical model catalog (labels, settings keys, latency/accuracy/cost metrics, default providers, and legacy-id migration aliases) lives in [src/lib/modelCatalog.ts](src/lib/modelCatalog.ts). It must stay in sync with the Rust-side `LocalModelSpec` IDs and the provider match arms in `transcribe/api.rs`, `processing_mode.rs`, and `rewrite/mod.rs`.
 
 ## Key Architecture Decisions
 
-- **The pipeline is the spine.** [src-tauri/src/pipeline.rs](src-tauri/src/pipeline.rs) (`run`/`run_inner`) orchestrates the whole flow: state transitions, transcribe → rewrite → deliver (paste + clipboard + history), event emission to the UI, and the placeholder/overlay lifecycle. A monotonic `run_id` guards against stale runs owning state cleanup when a new recording starts mid-processing.
+- **The pipeline is the spine.** [src-tauri/src/pipeline.rs](src-tauri/src/pipeline.rs) (`run`/`run_inner`) orchestrates the whole flow: state transitions, transcribe → rewrite → deliver (paste + clipboard + history), event emission to the UI, and the placeholder lifecycle. A monotonic `run_id` guards against stale runs owning state cleanup when a new recording starts mid-processing.
 - **Hotkey handling is in the Tauri shortcut callback.** [src-tauri/src/lib.rs](src-tauri/src/lib.rs) wires `global-shortcut`; `hotkey_mode` (`hold` vs toggle) decides press/release semantics. `hotkey/handler.rs` owns press/release. Manual recording start/stop commands also exist for non-hotkey triggers.
 - **Audio capture keeps a rolling pre-roll buffer** (`audio/capture.rs`) so the moment before the hotkey registers isn't lost.
 - **Provider readiness is resolved centrally.** `processing_mode.rs::resolve` checks the selected `speech_model` against whichever API keys / downloaded local models are present, so the UI and pipeline agree on whether a config is usable.
 - **Settings are key/value rows in SQLite**, not a typed struct. Read/written via `db/settings.rs` and the `get_setting`/`save_setting`/`get_settings` Tauri commands. Treat setting keys as a loose contract shared between Rust and the frontend.
-- **Frontend ↔ backend is Tauri commands + events.** Commands are registered in `lib.rs`'s `invoke_handler!` and called from [src/lib/commands.ts](src/lib/commands.ts). The backend emits events (e.g. `state-changed`, partial transcripts) the UI listens for; `src/lib/useDictation.ts` and `src/lib/store.tsx` hold the React-side state.
-- **Two windows.** The settings/history window (routed React app under `src/app/`) and a lightweight always-on overlay (`src/Overlay.tsx` + `overlay.rs`) shown during recording. A tray menu (`tray.rs`) provides quick access.
+- **Frontend ↔ backend is Tauri commands + events.** Commands are registered in `lib.rs`'s `invoke_handler!` and called from [src/lib/commands.ts](src/lib/commands.ts). The backend emits events (`state-changed`, `transcription-complete`, `pipeline-error`, `dictation-edited`) the UI listens for; `src/lib/useDictation.ts` and `src/lib/store.tsx` hold the React-side state.
+- **One window.** The settings/history window (routed React app under `src/app/`), plus a tray menu (`tray.rs`). The old NSPanel overlay window was removed once nothing rendered in it; recover it from history if floating UI is ever wanted again.
+- **Secrets live in the Keychain, not SQLite.** `db/settings.rs` routes the nine `SECRET_KEYS` (API keys and tokens) to the macOS Keychain, cached once per key per run. Everything else is a plain settings row.
+- **The microphone is released between dictations.** `audio/capture.rs` drops the cpal stream when idle — holding it keeps a `PreventUserIdleSystemSleep` assertion up and stops the Mac sleeping.
 
 ## Source Layout
 
@@ -56,9 +58,8 @@ The canonical model catalog (labels, settings keys, latency/accuracy/cost metric
 - [src/app/routes.ts](src/app/routes.ts) — React Router config. Routes: `/` (Dashboard), `/history`, `/vocabulary`, `/settings`, all under `Layout`.
 - [src/app/pages/](src/app/pages/) — current routed pages (the redesigned UI): `Dashboard`, `History`, `Vocabulary`, `Settings`, plus `Hotkey`, `RewriteRules`, `Languages`, `Models`, `Home`.
 - [src/app/components/Layout.tsx](src/app/components/Layout.tsx) — sidebar + page shell for the redesigned desktop UI.
-- [src/components/](src/components/) — feature components (settings panels, history viewer, vocabulary manager, model cards, hotkey/prompt/api-key settings, etc.).
+- [src/components/](src/components/) — `Dropdown`, `AppIcons`, `LocalModelCard` are live. **The other eleven files here are dead** — leftovers from the pre-redesign UI that nothing imports.
 - [src/lib/](src/lib/) — `commands.ts` (Tauri command wrappers), `useDictation.ts`, `store.tsx`, `modelCatalog.ts`, `hotkeys.ts`, `i18n.tsx`, `types.ts`, `utils.ts`.
-- [src/Overlay.tsx](src/Overlay.tsx) — the recording overlay window root.
 - [src/styles/](src/styles/) — Tailwind v4 + theme/font CSS.
 
 **Backend (`src-tauri/src/`):**
@@ -69,7 +70,41 @@ The canonical model catalog (labels, settings keys, latency/accuracy/cost metric
 - `transcribe/` — `api.rs` (cloud STT), `local/` (Parakeet via sherpa-onnx + model download), `model_manager.rs`.
 - `rewrite/` — one file per provider (`gemini`, `openai`, `groq`, `alibaba`, `apple_fm`, `local_llm`, `local_cleanup`) + `prompt.rs` + `mod.rs`.
 - `db/` — `schema.rs`, `settings.rs`, `history.rs`, `vocabulary.rs`.
-- `hotkey/`, `paste/` (simulated `Cmd+V`), `overlay.rs`, `tray.rs`, `state.rs`, `processing_mode.rs`, `error.rs`.
+- `hotkey/`, `paste/` (simulated `Cmd+V`), `tray.rs`, `state.rs`, `processing_mode.rs`, `error.rs`.
+
+## Known Gaps
+
+Real, unfixed, and worth knowing before touching the pipeline:
+
+- **The 20-minute recording cap can't be delivered on cloud speech.** `max_recording_seconds` is 1200, but
+  `API_SPEECH_TIMEOUT_SECONDS` is 15 and audio is uploaded whole as a 16 kHz 16-bit WAV — 20 minutes is
+  38.4 MB. OpenAI and Groq reject anything over 25 MB (~13 min) and there is no size guard in
+  `transcribe/api.rs`. Google `chirp_3` uses the synchronous `recognize` endpoint, capped near 60 s of audio.
+  Only Deepgram and local Parakeet handle long recordings.
+- **A rewrite *timeout* discards the transcript.** Each provider's `Ok(Err(_))` arm falls back to raw text,
+  but the `Err(_)` timeout arm returns `Err` — so a successful transcription is thrown away rather than
+  pasted. Four arms, same one-line fix.
+- **`insert_text_slow`'s delay does nothing on macOS.** It sets `mac_delay: 100`, but enigo 0.2's
+  `Keyboard::text()` goes through `fast_text()`, which posts 20-char `CGEvent` chunks and never reads
+  `mac_delay`. Only `key()` honours it, so the Backspace path is genuinely fast and the "slow typing"
+  reliability measure isn't in effect.
+- **Placeholder deletion is blind.** `replace_placeholder_inner` fires N backspaces assuming the cursor is
+  still after the placeholder. If the user typed or clicked elsewhere mid-dictation, those backspaces eat
+  real text.
+- **Dead code**: eleven unused components in `src/components/`, `ax.rs`'s geometry helpers, `term_exists`,
+  `selected_parakeet_spec`, and `generate_phonetic` (no caller since the vocab prompt was removed). Four
+  unreachable locale blocks (`es`/`fr`/`de`/`ja`) in `i18n.tsx` — `translationAlias` only maps en/zh/sv/fi.
+- **CI runs no lint, typecheck, or clippy** — `release.yml` only builds. `npm run lint` currently fails on
+  app code, and eslint has no ignore for `src-tauri/target`, so results shift depending on whether you built.
+
+## Distribution
+
+**Not shippable to the Mac App Store as architected** — the core mechanism is incompatible. MAS requires
+App Sandbox; the app has none, plus three entitlements MAS forbids (`disable-library-validation`,
+`allow-unsigned-executable-memory`, `allow-jit`). Auto-paste drives other processes via Accessibility and
+synthesized `CGEvent`s, the global hotkey uses `addGlobalMonitorForEventsMatchingMask`, the updater
+self-updates, and `binaries/llama-cli-*` ships a standalone executable — none of which a sandboxed MAS app
+may do. Developer ID + notarization is the distribution path.
 
 ## Build & Run
 
@@ -92,7 +127,11 @@ Helper: `./grant_permissions.sh`. Permission state is checked from the app via `
 
 ## Data Stored Locally
 
-App data directory holds `dictate-ai.db` (SQLite) with tables: `settings`, `vocabulary`, `transcription_history`. Notable setting keys: `hotkey`, `hotkey_mode`, `speech_model`, per-provider API keys (`speech_*_api_key`, `gemini_api_key`, etc.), `language`, `auto_paste`, `sound_enabled`, `max_recording_seconds`, `max_history_context`.
+App data directory holds `dictate-ai.db` (SQLite) with tables: `settings`, `vocabulary`, `transcription_history`. Notable setting keys: `hotkey`, `hotkey_mode`, `speech_model`, `rewrite_model`, `rewrite_thinking_level`, `language`, `auto_paste`, `sound_enabled`, `max_recording_seconds`, `max_history_context`.
+
+**API keys are not in the DB.** They live in the macOS Keychain under service `com.dictateai.app`; a startup migration moves any left over from older versions and blanks the row. History is auto-pruned after 30 days unless starred.
+
+Vocabulary terms added by auto-learn carry category `learned`. Auto-learn diffs a pasted dictation against the user's edit, keeps substitutions that look like mis-hearings (normalized edit distance <= 0.65, under half the words changed), and adds them silently — no prompt.
 
 ## Releases & Updates
 

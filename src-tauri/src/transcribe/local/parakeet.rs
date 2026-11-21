@@ -67,7 +67,11 @@ impl ParakeetEngine {
             decoder: path_string(&paths.decoder())?,
             joiner: path_string(&paths.joiner())?,
             tokens: path_string(&paths.tokens())?,
-            num_threads: 1,
+            // CPU inference (the static sherpa-onnx build has no GPU provider),
+            // so use a few cores rather than one.
+            num_threads: std::thread::available_parallelism()
+                .map(|n| n.get().min(4) as i32)
+                .unwrap_or(2),
             sample_rate: SAMPLE_RATE,
             feature_dim: FEATURE_DIM,
             debug: false,

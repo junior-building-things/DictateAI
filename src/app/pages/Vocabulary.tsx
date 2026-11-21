@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, Save, Search, Trash2, Volume2, X } from "lucide-react";
 import { toast } from "sonner";
+import { errorMessage } from "../../lib/utils";
 import {
   addVocabularyTerm,
   deleteVocabularyTerm,
@@ -54,7 +55,7 @@ export const Vocabulary = () => {
       const next = await getVocabulary();
       setTerms(next);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("unableToLoadVocabulary"));
+      toast.error(errorMessage(error, t("unableToLoadVocabulary")));
     } finally {
       setLoading(false);
     }
@@ -107,19 +108,20 @@ export const Vocabulary = () => {
         );
         toast.info(t("vocabularyTermAdded"));
       } else {
+        // Keep the term's category (e.g. "learned") rather than resetting it.
         await updateVocabularyTerm(
           editingId,
           term,
           phonetic,
           definition || null,
-          "general",
+          terms.find((entry) => entry.id === editingId)?.category ?? "general",
         );
         toast.info(t("vocabularyTermUpdated"));
       }
       closeModal();
       await loadTerms();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("unableToSaveVocabularyTerm"));
+      toast.error(errorMessage(error, t("unableToSaveVocabularyTerm")));
     } finally {
       setSaving(false);
     }
@@ -132,7 +134,7 @@ export const Vocabulary = () => {
       if (editingId === id) closeModal();
       toast.info(t("vocabularyTermDeleted"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("unableToDeleteVocabularyTerm"));
+      toast.error(errorMessage(error, t("unableToDeleteVocabularyTerm")));
     }
   };
 

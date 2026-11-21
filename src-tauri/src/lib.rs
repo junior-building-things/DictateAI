@@ -180,10 +180,23 @@ pub fn run() {
             let hotkey_str = {
                 let st = handle.state::<AppState>();
                 let db = st.db.lock().unwrap();
-                settings::get(&db, "hotkey").unwrap_or_else(|_| "CommandOrControl+S".into())
+                settings::get(&db, "hotkey").unwrap_or_else(|_| RIGHT_OPTION_SENTINEL.into())
+            };
+            // Right Option is the seeded default (schema.rs); an unparseable
+            // stored hotkey falls back to it too.
+            let shortcut: Option<Shortcut> = if is_right_option_sentinel(&hotkey_str) {
+                None
+            } else {
+                match hotkey_str.parse() {
+                    Ok(shortcut) => Some(shortcut),
+                    Err(e) => {
+                        log::error!("Stored hotkey '{}' doesn't parse: {}", hotkey_str, e);
+                        None
+                    }
+                }
             };
 
-            if is_right_option_sentinel(&hotkey_str) {
+            if shortcut.is_none() {
                 #[cfg(target_os = "macos")]
                 {
                     app.state::<hotkey::right_option::RightOptionMonitor>()
@@ -197,11 +210,13 @@ pub fn run() {
                     let shortcut: Shortcut = "CommandOrControl+S".parse().unwrap();
                     app.global_shortcut().register(shortcut)?;
                 }
-            } else {
-                let shortcut: Shortcut = hotkey_str
-                    .parse()
-                    .unwrap_or_else(|_| "CommandOrControl+S".parse().unwrap());
-                app.global_shortcut().register(shortcut)?;
+            } else if let Some(shortcut) = shortcut {
+                // Don't fail setup on a registration error (e.g. the combo is
+                // taken by another app) — that would abort every launch. The
+                // user can pick a different hotkey in Settings.
+                if let Err(e) = app.global_shortcut().register(shortcut) {
+                    log::error!("Failed to register hotkey '{}': {}", hotkey_str, e);
+                }
             }
 
             // Setup system tray

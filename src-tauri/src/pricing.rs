@@ -40,8 +40,18 @@ pub fn speech_cost_usd(model: &str, duration_ms: i64) -> f64 {
     let Some(per_minute) = speech_rate_per_minute(model) else {
         return 0.0;
     };
-    let minutes = (duration_ms.max(0) as f64) / 60_000.0;
+    let billed_ms = duration_ms.max(minimum_billed_ms(model));
+    let minutes = (billed_ms.max(0) as f64) / 60_000.0;
     minutes * per_minute
+}
+
+/// Groq bills every transcription request as at least 10 seconds, so short
+/// dictations — the common case — cost more than their length suggests.
+fn minimum_billed_ms(model: &str) -> i64 {
+    match model {
+        "whisper-large-v3" | "whisper-large-v3-turbo" => 10_000,
+        _ => 0,
+    }
 }
 
 struct RewriteRate {
@@ -84,6 +94,7 @@ fn rewrite_rate(model: &str) -> Option<RewriteRate> {
         "qwen-flash" => Some((0.05, 0.20)),
         "qwen-plus" => Some((0.40, 1.20)),
         "qwen-max" => Some((1.60, 6.40)),
+        "qwen2.5-7b-instruct" => Some((0.175, 0.70)),
 
         _ => None,
     }?;
@@ -107,6 +118,9 @@ fn speech_rate_per_minute(model: &str) -> Option<f64> {
         // Deepgram Nova-3 prerecorded.
         "nova-3" => Some(0.0077),
 
+        // Google Chirp 3 (Speech-to-Text V2 standard tier).
+        "chirp_3" => Some(0.016),
+
         // Alibaba Qwen3-ASR.
         "qwen3-asr-flash" => Some(0.0021),
 
@@ -114,5 +128,18 @@ fn speech_rate_per_minute(model: &str) -> Option<f64> {
         "parakeet-tdt-0.6b-v2-int8" | "parakeet-tdt-0.6b-v3-int8" => Some(0.0),
 
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groq_bills_a_ten_second_minimum() {
+        let short = speech_cost_usd("whisper-large-v3-turbo", 3_000);
+        let ten = speech_cost_usd("whisper-large-v3-turbo", 10_000);
+        assert_eq!(short, ten);
+        assert!(speech_cost_usd("nova-3", 3_000) < speech_cost_usd("nova-3", 10_000));
     }
 }

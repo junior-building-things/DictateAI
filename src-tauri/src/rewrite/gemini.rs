@@ -64,11 +64,16 @@ struct UsageMetadata {
     prompt_token_count: u32,
     #[serde(rename = "candidatesTokenCount", default)]
     candidates_token_count: u32,
+    /// Thinking tokens on 3.x — billed at the output rate.
+    #[serde(rename = "thoughtsTokenCount", default)]
+    thoughts_token_count: u32,
 }
 
 #[derive(Deserialize)]
 struct Candidate {
     content: CandidateContent,
+    #[serde(rename = "finishReason", default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -160,18 +165,20 @@ pub async fn rewrite(
         }],
         generation_config: GenerationConfig {
             temperature,
-            max_output_tokens: 2048,
+            // Shared with thinking tokens on 3.x; sized so a 20-minute
+            // dictation plus thinking still fits.
+            max_output_tokens: 16384,
             thinking_config,
         },
     };
 
-    let url = format!(
-        "{}/{}:generateContent?key={}",
-        GEMINI_API_URL_PREFIX, api_model, api_key
-    );
+    // Key goes in a header, not the URL: reqwest's error Display includes the
+    // URL, and those errors are surfaced to the UI as toasts.
+    let url = format!("{}/{}:generateContent", GEMINI_API_URL_PREFIX, api_model);
 
     let response = client
         .post(&url)
+        .header("x-goog-api-key", api_key)
         .json(&request)
         .send()
         .await
@@ -199,12 +206,23 @@ pub async fn rewrite(
     }
 
     let usage = gemini_response.usage_metadata.unwrap_or_default();
-    let text = gemini_response
+    let candidate = gemini_response
         .candidates
         .and_then(|c| c.into_iter().next())
-        .and_then(|c| c.content.parts.into_iter().next())
-        .and_then(|p| p.text)
         .ok_or_else(|| AppError::Rewrite("Empty response from Gemini".into()))?;
+    // A truncated rewrite would paste with its tail missing; erroring lets the
+    // pipeline fall back to the full raw transcript instead.
+    if candidate.finish_reason.as_deref() == Some("MAX_TOKENS") {
+        return Err(AppError::Rewrite(
+            "Gemini rewrite hit the output limit; using raw transcription.".into(),
+        ));
+    }
+    let text: String = candidate
+        .content
+        .parts
+        .into_iter()
+        .filter_map(|p| p.text)
+        .collect();
 
     let text = text.trim().to_string();
     log::info!(
@@ -216,7 +234,7 @@ pub async fn rewrite(
     Ok(RewriteOutcome {
         text,
         prompt_tokens: usage.prompt_token_count,
-        completion_tokens: usage.candidates_token_count,
+        completion_tokens: usage.candidates_token_count + usage.thoughts_token_count,
     })
 }
 

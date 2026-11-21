@@ -502,12 +502,13 @@ async fn transcribe_google_chirp(
     };
 
     let url = format!(
-        "https://speech.googleapis.com/v2/projects/{}/locations/{}/recognizers/_:recognize?key={}",
-        settings.google_project_id, region, settings.google_api_key
+        "https://speech.googleapis.com/v2/projects/{}/locations/{}/recognizers/_:recognize",
+        settings.google_project_id, region
     );
 
     let response = client
         .post(&url)
+        .header("x-goog-api-key", &settings.google_api_key)
         .json(&request)
         .send()
         .await

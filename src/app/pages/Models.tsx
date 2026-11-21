@@ -10,6 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { errorMessage } from "../../lib/utils";
 import { Dropdown, ProviderLogo } from "../../components/Dropdown";
 import {
   appleFmAvailability,
@@ -191,7 +192,7 @@ export const Models = () => {
     try {
       await work();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("unableToSaveProviderSettings"));
+      toast.error(errorMessage(error, t("unableToSaveProviderSettings")));
     } finally {
       setAction(null);
     }

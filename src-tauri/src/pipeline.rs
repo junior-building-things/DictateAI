@@ -506,13 +506,20 @@ async fn run_inner(
     // Defensive: strip one level of wrapping quotes if the model added them
     // despite the prompt. Common with small instruct models (Gemma 1B,
     // Llama 1B) that mirror few-shot example formatting.
-    let rewritten = strip_wrapping_quotes(&rewrite_outcome.text);
-    // Defensive: detect "no change" meta-commentary the model emitted instead
-    // of echoing the input. Treat it as empty so the deliver step deletes the
-    // placeholder and pastes nothing.
+    // Skipped when the user's own words were quoted.
+    let rewritten = strip_prompt_framing(&rewrite_outcome.text);
+    let rewritten = if strip_wrapping_quotes(&raw_text) == raw_text.trim() {
+        strip_wrapping_quotes(&rewritten)
+    } else {
+        rewritten
+    };
+    // Defensive: an empty rewrite, or "no change" meta-commentary the model
+    // emitted instead of echoing the input, means the cleanup produced
+    // nothing usable — fall back to the raw transcript rather than dropping
+    // the dictation. (A user who actually said "None." gets it back too.)
     let rewritten = if is_no_change_sentinel(&rewritten) {
-        log::info!("Rewrite returned a no-change sentinel; treating as empty");
-        String::new()
+        log::info!("Rewrite returned empty or a no-change sentinel; using raw text");
+        raw_text.trim().to_string()
     } else {
         rewritten
     };
@@ -570,13 +577,19 @@ async fn run_inner(
         // the user isn't pasted with nothing.
         if !rewritten.trim().is_empty() {
             let placeholder_len = state.pending_placeholder.lock().unwrap().take();
-            if let Some(len) = placeholder_len {
-                paste::simulate::replace_placeholder(len, &rewritten)?;
+            let typed = if let Some(len) = placeholder_len {
+                paste::simulate::replace_placeholder(len, &rewritten)
             } else {
                 // No placeholder was typed (hold mode, or accessibility
                 // denied at press time). Slow path so apps with their own
                 // IME handling don't drop characters.
-                paste::simulate::insert_text_slow(&rewritten)?;
+                paste::simulate::insert_text_slow(&rewritten)
+            };
+            if let Err(e) = typed {
+                // Typing failed (e.g. Accessibility revoked) — leave the
+                // result on the clipboard so it isn't only in History.
+                let _ = paste::simulate::copy_text(app, &rewritten);
+                return Err(e);
             }
 
             // Kick off the "learn-from-edits" watcher: poll the focused
@@ -696,8 +709,7 @@ fn ensure_parakeet_engine(
 /// Return true if `s` looks like a "the model had nothing to do" response
 /// rather than an actual cleaned transcript. Small instruct models sometimes
 /// emit these phrases despite the system prompt telling them not to. When
-/// detected, the pipeline treats the rewrite as empty — placeholder gets
-/// removed, nothing pasted.
+/// detected (or the rewrite is empty), the pipeline pastes the raw transcript.
 fn is_no_change_sentinel(s: &str) -> bool {
     let normalized: String = s
         .trim()
@@ -721,6 +733,19 @@ fn is_no_change_sentinel(s: &str) -> bool {
     )
 }
 
+/// Remove prompt scaffolding a model echoed back: the `<transcript>` tags the
+/// input arrives in, or a `Rewritten:` label copied from the favorite
+/// examples.
+fn strip_prompt_framing(s: &str) -> String {
+    let t = s.trim();
+    let t = t.strip_prefix("Rewritten:").unwrap_or(t).trim();
+    let t = t
+        .strip_prefix("<transcript>")
+        .and_then(|rest| rest.strip_suffix("</transcript>"))
+        .unwrap_or(t);
+    t.trim().to_string()
+}
+
 fn strip_wrapping_quotes(s: &str) -> String {
     let trimmed = s.trim();
     let mut chars: Vec<char> = trimmed.chars().collect();
@@ -740,6 +765,11 @@ fn strip_wrapping_quotes(s: &str) -> String {
             | ('\u{00AB}', '\u{00BB}')
     );
     if !is_pair {
+        return trimmed.to_string();
+    }
+    let inner = &chars[1..chars.len() - 1];
+    // `"Cancel" or "Retry"` starts and ends with quotes but isn't wrapped.
+    if inner.contains(&first) || inner.contains(&last) {
         return trimmed.to_string();
     }
     chars.remove(0);
@@ -797,11 +827,16 @@ fn normalize_audio(mut audio: Vec<f32>) -> Vec<f32> {
         return audio;
     }
 
-    // Step 1: Compute noise floor from the first 50ms (800 samples at 16kHz)
-    // This is typically before the user starts speaking
-    let noise_window = 800.min(audio.len());
-    let noise_rms =
-        (audio[..noise_window].iter().map(|s| s * s).sum::<f32>() / noise_window as f32).sqrt();
+    // Step 1: Estimate the noise floor from the quietest 20 ms window. The
+    // first 50 ms isn't reliably silence: the stream opens on keypress with
+    // an empty pre-roll, so users are often already speaking.
+    const WINDOW: usize = 320; // 20 ms at 16 kHz
+    let rms = |chunk: &[f32]| (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
+    let noise_rms = audio
+        .chunks_exact(WINDOW)
+        .map(rms)
+        .fold(f32::INFINITY, f32::min);
+    let noise_rms = if noise_rms.is_finite() { noise_rms } else { 0.0 };
     let noise_gate_threshold = (noise_rms * 3.0).max(0.002);
     log::info!(
         "Audio pre-processing: max_amp={:.4}, noise_rms={:.6}, gate_threshold={:.4}",
@@ -810,14 +845,16 @@ fn normalize_audio(mut audio: Vec<f32>) -> Vec<f32> {
         noise_gate_threshold
     );
 
-    // Step 2: Apply soft noise gate — attenuate samples below threshold.
-    // We don't hard-cut to avoid artifacts; 0.1× preserves enough signal
-    // for Whisper to model the noise floor while suppressing AC hum / fan
-    // noise / room tone.
-    for sample in audio.iter_mut() {
-        let abs = sample.abs();
-        if abs < noise_gate_threshold {
-            *sample *= 0.1;
+    // Step 2: Soft noise gate on the 20 ms envelope — attenuate whole windows
+    // whose RMS is below threshold. Gating per sample would also squash every
+    // zero crossing inside speech. We don't hard-cut to avoid artifacts; 0.1×
+    // preserves enough signal for Whisper to model the noise floor while
+    // suppressing AC hum / fan noise / room tone.
+    for chunk in audio.chunks_mut(WINDOW) {
+        if rms(chunk) < noise_gate_threshold {
+            for sample in chunk.iter_mut() {
+                *sample *= 0.1;
+            }
         }
     }
 
@@ -983,7 +1020,7 @@ fn spawn_edit_monitor(app: tauri::AppHandle, state: &AppState, pasted: String) {
         // Skipped if Shift is held (newline, not send) — see send_key.rs.
         let tx_for_enter = tx.clone();
         let observer_for_enter = std::sync::Arc::clone(&observer);
-        let _enter_monitor = crate::hotkey::send_key::SendKeyMonitor::new(move || {
+        let enter_monitor = crate::hotkey::send_key::SendKeyMonitor::new(move || {
             // Snapshot the bound element's current text BEFORE pushing
             // the synthesized clear — this gives the detection loop one
             // final chance to update `latest` with anything typed in the
@@ -1143,9 +1180,60 @@ fn spawn_edit_monitor(app: tauri::AppHandle, state: &AppState, pasted: String) {
             );
         }
         poll_handle.abort();
-        drop(observer);
+        // Wait for the aborted task to drop its observer ref, so the last
+        // ref is released below rather than on some runtime thread.
+        let _ = poll_handle.await;
+        // Tear down on the main thread: the AX callback and NSEvent handlers
+        // run there, so dropping there can't free a closure mid-call.
+        let _ = app_for_setup.run_on_main_thread(move || {
+            drop(enter_monitor);
+            drop(observer);
+        });
     });
     // Suppress unused-variable warning on the borrowed `state`.
     let _ = state;
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_only_a_single_wrapping_pair() {
+        assert_eq!(strip_wrapping_quotes("\"Hello there.\""), "Hello there.");
+        assert_eq!(
+            strip_wrapping_quotes("\"Cancel\" or \"Retry\""),
+            "\"Cancel\" or \"Retry\""
+        );
+    }
+
+    #[test]
+    fn noise_gate_leaves_speech_from_the_first_sample_intact() {
+        // 0.3 s of a 200 Hz tone (speech from the first sample), then 0.3 s
+        // of quiet noise. Speech must keep its zero-crossing detail.
+        let mut audio: Vec<f32> = (0..4800)
+            .map(|i| 0.4 * (i as f32 * 2.0 * std::f32::consts::PI * 200.0 / 16000.0).sin())
+            .collect();
+        audio.extend((0..4800).map(|i| if i % 2 == 0 { 0.001 } else { -0.001 }));
+        let out = normalize_audio(audio.clone());
+        let gain = out[400] / audio[400];
+        for i in 0..4800 {
+            assert!((out[i] - audio[i] * gain).abs() < 1e-4, "speech sample {} distorted", i);
+        }
+    }
+
+    #[test]
+    fn strips_echoed_prompt_framing() {
+        assert_eq!(strip_prompt_framing("Rewritten: Hello there"), "Hello there");
+        assert_eq!(strip_prompt_framing("<transcript>\nHello there\n</transcript>"), "Hello there");
+        assert_eq!(strip_prompt_framing("Hello there"), "Hello there");
+    }
+
+    #[test]
+    fn sentinel_matches_empty_and_meta_commentary() {
+        assert!(is_no_change_sentinel(""));
+        assert!(is_no_change_sentinel("No changes needed."));
+        assert!(!is_no_change_sentinel("Send it tomorrow."));
+    }
+}

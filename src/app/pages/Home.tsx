@@ -91,7 +91,8 @@ export const Home = () => {
     const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       const parts: string[] = [];
-      if (event.metaKey || event.ctrlKey) parts.push("⌘");
+      if (event.ctrlKey) parts.push("⌃");
+      if (event.metaKey) parts.push("⌘");
       if (event.altKey) parts.push("⌥");
       if (event.shiftKey) parts.push("Shift");
       const keyToken = formatHotkeyToken(event.code, event.key);
