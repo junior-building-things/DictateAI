@@ -1,6 +1,6 @@
 [package]
 name = "dictateai"
-version = "1.0.24"
+version = "1.0.25"
 description = "DictateAI desktop app"
 authors = ["you"]
 license = "MIT"

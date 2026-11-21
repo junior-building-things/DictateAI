@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "DictateAI",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "identifier": "com.dictateai.app",
   "build": {
     "frontendDist": "../dist",
@@ -35,7 +35,7 @@
       "endpoints": [
         "https://github.com/junior-building-things/DictateAI/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzOThDM0YyOTM3REI2OTMKUldTVHRuMlQ4c09ZMHg5b1NNa1I3NE1QTC9SSEhCS0RaQ1plSk9ScU1xT3dkNzNJSitaRW02ZQo="
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzOThDM0YyOTM3REI2OTMKUldTVHRuMlQ4c09ZMHg5b1NNa1I3NE1QTC9SSEhCS0RaQ1plSk9ScU1xT3dkNzNJSitrWkVtNmUK"
     }
   },
   "bundle": {

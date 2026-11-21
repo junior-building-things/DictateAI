@@ -291,3 +291,26 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use base64::Engine;
+
+    /// A malformed updater key fails every update check with "Invalid
+    /// encoding in minisign data", and only a manual reinstall can replace it
+    /// on installed copies — so catch it before it ships. A minisign public
+    /// key decodes to 42 bytes: the "Ed" algorithm tag, an 8-byte key id and
+    /// the 32-byte Ed25519 key.
+    #[test]
+    fn updater_pubkey_is_a_valid_minisign_key() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let pubkey = conf["plugins"]["updater"]["pubkey"].as_str().unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let text = String::from_utf8(b64.decode(pubkey).unwrap()).unwrap();
+        let key_line = text.lines().nth(1).unwrap();
+        let key = b64.decode(key_line).expect("key line must be valid base64");
+        assert_eq!(key.len(), 42);
+        assert_eq!(&key[..2], b"Ed");
+    }
+}
