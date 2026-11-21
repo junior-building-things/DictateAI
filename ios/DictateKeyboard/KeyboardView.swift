@@ -1,205 +1,372 @@
 import SwiftUI
+import UIKit
 
-/// A basic QWERTY keyboard in the system style, with a dictation button in
-/// the top-right of a toolbar row — the Raycast layout. Phase 1 keeps typing
-/// simple (no autocorrect, callouts or swipe typing).
+/// The keyboard: a dictation toolbar above system-styled keys. Geometry and
+/// colors are measured from the iOS 27 system keyboard; touches are handled
+/// by `KeyboardTouchView`, this view only draws.
 struct KeyboardView: View {
-    static let height: CGFloat = 270
-
     @ObservedObject var model: KeyboardModel
-    @Environment(\.colorScheme) private var scheme
-
-    private let letterRows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"].map { $0.map(String.init) }
-    private let symbolRows = ["1234567890", "-/:;()$&@\"", ".,?!'"].map { $0.map(String.init) }
+    @Environment(\.colorScheme) private var systemScheme
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            VStack(spacing: 11) {
-                let rows = model.symbols ? symbolRows : letterRows
-                row(rows[0])
-                row(rows[1]).padding(.horizontal, model.symbols ? 0 : 18)
-                HStack(spacing: 6) {
-                    if model.symbols {
-                        FunctionKey(label: "", width: 44) {}.opacity(0)
-                    } else {
-                        FunctionKey(systemImage: shiftIcon, width: 44, highlighted: model.shift) { model.toggleShift() }
-                    }
-                    Spacer(minLength: 4)
-                    row(rows[2])
-                    Spacer(minLength: 4)
-                    DeleteKey { model.deleteBackward() }
-                }
-                HStack(spacing: 6) {
-                    FunctionKey(label: model.symbols ? "ABC" : "123", width: 48) { model.symbols.toggle() }
-                    if model.showsGlobeKey {
-                        FunctionKey(systemImage: "globe", width: 42) { model.nextKeyboard() }
-                    }
-                    CharacterKey(label: "space", font: .system(size: 16)) { model.space() }
-                    FunctionKey(label: "return", width: 92) { model.newline() }
-                }
-            }
-            .padding(.horizontal, 3)
-            .padding(.bottom, 4)
-        }
-        .frame(height: Self.height)
-        .environment(\.keyboardScheme, scheme)
-    }
-
-    private var shiftIcon: String {
-        model.capsLock ? "capslock.fill" : (model.shift ? "shift.fill" : "shift")
-    }
-
-    private func row(_ keys: [String]) -> some View {
-        HStack(spacing: 6) {
-            ForEach(keys, id: \.self) { key in
-                let shown = (model.shift || model.capsLock) && !model.symbols ? key.uppercased() : key
-                CharacterKey(label: shown) { model.type(key) }
+            if model.showingEmoji {
+                EmojiPanel(model: model, palette: palette)
+                    .frame(height: KeyboardMetrics.keysHeight)
+            } else {
+                keys
             }
         }
+        .frame(height: KeyboardMetrics.totalHeight)
     }
 
-    // MARK: Toolbar
+    private var palette: KeyPalette {
+        let dark = model.context.appearance == .dark || (model.context.appearance != .light && systemScheme == .dark)
+        return dark ? .dark : .light
+    }
 
+    // MARK: Keys
+
+    private var keys: some View {
+        GeometryReader { proxy in
+            let layout = model.layout
+            ZStack(alignment: .topLeading) {
+                ForEach(layout.frames) { key in
+                    KeyCap(key: key, model: model, palette: palette)
+                        .frame(width: key.rect.width, height: key.rect.height)
+                        .offset(x: key.rect.minX, y: key.rect.minY)
+                }
+                if let callout = model.callout {
+                    Callout(key: callout, label: label(for: callout), palette: palette, width: proxy.size.width)
+                }
+                if let menu = model.accentMenu {
+                    AccentMenuView(menu: menu, palette: palette, width: proxy.size.width)
+                }
+                KeyboardTouchLayer(model: model)
+            }
+            .onAppear { model.width = proxy.size.width }
+            .onChange(of: proxy.size.width) { _, width in model.width = width }
+        }
+        .frame(height: KeyboardMetrics.keysHeight)
+    }
+
+    private func label(for key: KeyFrame) -> String {
+        guard case .character(let c) = key.kind else { return "" }
+        return model.layer == .letters && (model.shift || model.capsLock) ? c.uppercased() : c
+    }
+
+    // MARK: Dictation bar
+
+    /// iOS adds ~17 pt of padding above a third-party keyboard, so lifting
+    /// the bar's contents 6 pt (half of toolbarHeight − micSize) centers them between the panel's top edge
+    /// and the first row of keys.
+    private static let barLift: CGFloat = 12
+    private static let micSize: CGFloat = 34
+
+    /// Suggestions (or dictation status) on the left, the mic on the right.
     private var toolbar: some View {
-        HStack(spacing: 8) {
-            status
-            Spacer(minLength: 0)
-            Button(action: model.micTapped) {
-                ZStack {
-                    Circle().fill(micFill).frame(width: 34, height: 34)
-                    if model.dictation == .processing {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: model.dictation == .recording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
+        HStack(spacing: 0) {
+            Group {
+                if model.dictation == .idle {
+                    suggestionRow
+                } else {
+                    Button(action: statusTapped) {
+                        statusContent
+                            .padding(.bottom, Self.barLift)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Button(action: model.micTapped) {
+                micIcon
+                    .padding(.bottom, Self.barLift)
+                    // Centered over the delete key's column.
+                    .frame(width: 2 * (KeyboardMetrics.sideMargin + 22.75), height: KeyboardMetrics.toolbarHeight)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(model.dictation == .processing)
             .accessibilityLabel(model.dictation == .recording ? "Stop dictation" : "Dictate")
         }
-        .padding(.horizontal, 10)
-        .frame(height: 46)
+        .padding(.leading, KeyboardMetrics.sideMargin)
+        .frame(height: KeyboardMetrics.toolbarHeight)
     }
 
-    @ViewBuilder private var status: some View {
+    private var suggestionRow: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(model.suggestions.enumerated()), id: \.element) { index, suggestion in
+                if index > 0 {
+                    Rectangle().fill(palette.secondaryText.opacity(0.35)).frame(width: 1, height: 22)
+                        .padding(.bottom, Self.barLift)
+                }
+                Button { model.applySuggestion(suggestion) } label: {
+                    suggestionLabel(suggestion)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, Self.barLift)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func suggestionLabel(_ suggestion: KeyboardModel.Suggestion) -> Text {
+        switch suggestion {
+        case .typed(let word): Text("“\(word)”").font(.system(size: 16)).foregroundColor(palette.text)
+        case .word(let word): Text(word).font(.system(size: 16)).foregroundColor(palette.text)
+        case .emoji(let emoji): Text(emoji).font(.system(size: 24))
+        }
+    }
+
+    /// The DictateAI app icon; red with a stop square while recording.
+    private var micIcon: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.micSize * 0.225, style: .continuous)
+        return ZStack {
+            // A loose PNG, which SwiftUI's Image(_:) (asset catalogs only) can't load.
+            Image(uiImage: UIImage(named: "DictationIcon") ?? UIImage()).resizable().interpolation(.high)
+            switch model.dictation {
+            case .recording:
+                shape.fill(Color.red)
+                Image(systemName: "stop.fill").font(.system(size: 13, weight: .bold))
+            case .processing:
+                shape.fill(Color.black.opacity(0.35))
+                ProgressView().controlSize(.small).tint(.white)
+            case .idle, .failed:
+                EmptyView()
+            }
+        }
+        .foregroundStyle(.white)
+        .frame(width: Self.micSize, height: Self.micSize)
+        .clipShape(shape)
+    }
+
+    @ViewBuilder private var statusContent: some View {
         switch model.dictation {
         case .idle:
             EmptyView()
         case .recording:
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let seconds = Int(context.date.timeIntervalSince(model.recordingStart))
-                Label(String(format: "Listening %d:%02d", seconds / 60, seconds % 60), systemImage: "waveform")
-                    .font(.system(size: 14, weight: .medium))
+                Text(String(format: "Listening %d:%02d · tap to finish", seconds / 60, seconds % 60))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.red)
             }
         case .processing:
-            Text("Transcribing…").font(.system(size: 14)).foregroundStyle(.secondary)
+            Text("Transcribing…").font(.system(size: 15)).foregroundStyle(palette.secondaryText)
         case .failed(let message):
-            Text(message).font(.system(size: 12)).foregroundStyle(.red).lineLimit(2)
+            Text(message).font(.system(size: 12)).foregroundStyle(.red).lineLimit(1).minimumScaleFactor(0.8)
         }
     }
 
-    private var micFill: Color {
+    /// Tapping the status finishes a recording or dismisses an error.
+    private func statusTapped() {
         switch model.dictation {
-        case .recording: .red
-        case .processing: .gray
-        default: .accentColor
+        case .recording: model.micTapped()
+        case .failed: model.dictation = .idle
+        default: break
         }
     }
 }
 
-// MARK: - Keys
+// MARK: - Palette
 
-private struct KeyboardSchemeKey: EnvironmentKey { static let defaultValue: ColorScheme = .light }
-private extension EnvironmentValues {
-    var keyboardScheme: ColorScheme {
-        get { self[KeyboardSchemeKey.self] }
-        set { self[KeyboardSchemeKey.self] = newValue }
-    }
+struct KeyPalette {
+    let key: Color
+    let pressedKey: Color
+    let text: Color
+    let secondaryText: Color
+    let accent: Color
+
+    /// Sampled from the system keyboard (light: white keys on the glass panel).
+    static let light = KeyPalette(key: .white, pressedKey: Color(red: 0.82, green: 0.83, blue: 0.85),
+                                  text: .black, secondaryText: .secondary,
+                                  accent: Color(red: 0, green: 122 / 255, blue: 1))
+    static let dark = KeyPalette(key: Color(white: 0.42), pressedKey: Color(white: 0.30),
+                                 text: .white, secondaryText: Color(white: 0.75),
+                                 accent: Color(red: 0, green: 122 / 255, blue: 1))
 }
 
-private struct KeyFace: ViewModifier {
-    @Environment(\.keyboardScheme) private var scheme
-    let function: Bool
-    let pressed: Bool
+// MARK: - Key caps
 
-    func body(content: Content) -> some View {
-        content
-            .frame(maxWidth: .infinity, minHeight: 42, maxHeight: 42)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(fill)
-                    .shadow(color: .black.opacity(0.3), radius: 0, x: 0, y: 1)
-            )
-            .foregroundStyle(scheme == .dark ? Color.white : Color.black)
+private struct KeyCap: View {
+    let key: KeyFrame
+    @ObservedObject var model: KeyboardModel
+    let palette: KeyPalette
+
+    private var isPressed: Bool { model.pressed.contains(key.id) }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: KeyboardMetrics.cornerRadius, style: .continuous)
+            .fill(fill)
+            .overlay { content.opacity(model.trackpadActive ? 0 : 1) }
+            // A character key under its pop-up hides, as on the system keyboard.
+            .opacity(key.kind.isCharacter && (model.callout?.id == key.id || model.accentMenu?.key.id == key.id) ? 0 : 1)
     }
 
     private var fill: Color {
-        let light = scheme == .dark ? Color(white: 0.42) : .white
-        let dark = scheme == .dark ? Color(white: 0.27) : Color(red: 0.67, green: 0.69, blue: 0.73)
-        return function != pressed ? dark : light
+        if case .returnKey = key.kind, isBlueReturn {
+            return model.context.returnEnabled ? palette.accent : palette.accent.opacity(0.4)
+        }
+        return isPressed && !key.kind.isCharacter ? palette.pressedKey : palette.key
+    }
+
+    private var isBlueReturn: Bool { model.context.returnKeyType != .default }
+
+    @ViewBuilder private var content: some View {
+        switch key.kind {
+        case .character(let c):
+            if let subtitle = key.subtitle {
+                VStack(spacing: -2) {
+                    Text(c).font(.system(size: 26))
+                    Text(subtitle).font(.system(size: 10, weight: .semibold)).kerning(1.5)
+                }
+                .foregroundStyle(palette.text)
+            } else {
+                let shown = model.layer == .letters && (model.shift || model.capsLock) ? c.uppercased() : c
+                Text(shown)
+                    .font(.system(size: c.count > 1 ? 16 : 22))
+                    .foregroundStyle(palette.text)
+                    .offset(y: -1)
+            }
+        case .shift:
+            symbol(model.capsLock ? "capslock.fill" : (model.shift ? "shift.fill" : "shift"))
+        case .delete:
+            symbol(isPressed ? "delete.left.fill" : "delete.left")
+        case .space:
+            EmptyView()
+        case .globe:
+            symbol("globe")
+        case .emoji:
+            symbol("face.smiling", size: 22, weight: .semibold)
+        case .layer(let target):
+            Text(target == .letters ? "ABC" : (target == .numbers ? "123" : "#+=")).font(.system(size: 17))
+                .foregroundStyle(palette.text)
+        case .returnKey:
+            returnLabel
+        }
+    }
+
+    private func symbol(_ name: String, size: CGFloat = 19, weight: Font.Weight = .regular) -> some View {
+        Image(systemName: name).font(.system(size: size, weight: weight)).foregroundStyle(palette.text)
+    }
+
+    @ViewBuilder private var returnLabel: some View {
+        let foreground = isBlueReturn ? Color.white : palette.text
+        switch model.context.returnKeyType {
+        case .default:
+            Image(systemName: "return.left").font(.system(size: 19)).foregroundStyle(foreground)
+        case .send:
+            Image(systemName: "arrow.up").font(.system(size: 20, weight: .medium)).foregroundStyle(foreground)
+        case .search, .google, .yahoo:
+            Image(systemName: "magnifyingglass").font(.system(size: 19, weight: .medium)).foregroundStyle(foreground)
+        default:
+            Text(returnTitle).font(.system(size: 17)).foregroundStyle(foreground)
+        }
+    }
+
+    private var returnTitle: String {
+        switch model.context.returnKeyType {
+        case .go: "go"
+        case .join: "join"
+        case .next: "next"
+        case .route: "route"
+        case .done: "done"
+        case .continue: "continue"
+        case .emergencyCall: "SOS"
+        default: "return"
+        }
     }
 }
 
-private struct PressStyle: ButtonStyle {
-    let function: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.modifier(KeyFace(function: function, pressed: configuration.isPressed))
-    }
-}
+// MARK: - Pop-ups
 
-private struct CharacterKey: View {
+/// The enlarged letter that rises out of a pressed key.
+private struct Callout: View {
+    let key: KeyFrame
     let label: String
-    var font: Font = .system(size: 23)
-    let action: () -> Void
+    let palette: KeyPalette
+    let width: CGFloat
 
     var body: some View {
-        Button(action: action) { Text(label).font(font) }
-            .buttonStyle(PressStyle(function: false))
+        let r = key.rect
+        let bubbleWidth = r.width + 24
+        // Rises no higher than the toolbar, which is all the room there is.
+        let bubbleHeight = r.height - 8
+        let bubbleX = min(max(r.midX - bubbleWidth / 2, 1), width - bubbleWidth - 1)
+        let bubble = CGRect(x: bubbleX, y: r.minY - bubbleHeight + 4, width: bubbleWidth, height: bubbleHeight)
+        ZStack(alignment: .topLeading) {
+            CalloutShape(key: r, bubble: bubble)
+                .fill(palette.key)
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+            Text(label)
+                .font(.system(size: 34))
+                .foregroundStyle(palette.text)
+                .frame(width: bubble.width, height: bubble.height)
+                .offset(x: bubble.minX, y: bubble.minY)
+        }
+        .allowsHitTesting(false)
     }
 }
 
-private struct FunctionKey: View {
-    var label: String = ""
-    var systemImage: String? = nil
+private struct CalloutShape: Shape {
+    let key: CGRect
+    let bubble: CGRect
+
+    func path(in _: CGRect) -> Path {
+        let r = KeyboardMetrics.cornerRadius
+        var path = Path(roundedRect: bubble, cornerRadius: r + 2, style: .continuous)
+        // Neck joining the bubble to the key, narrowing with a smooth curve.
+        var neck = Path()
+        neck.move(to: CGPoint(x: bubble.minX + 2, y: bubble.maxY - r))
+        neck.addCurve(to: CGPoint(x: key.minX, y: key.minY + r),
+                      control1: CGPoint(x: bubble.minX + 2, y: bubble.maxY + 4),
+                      control2: CGPoint(x: key.minX, y: key.minY))
+        neck.addLine(to: CGPoint(x: key.minX, y: key.maxY - r))
+        neck.addQuadCurve(to: CGPoint(x: key.minX + r, y: key.maxY), control: CGPoint(x: key.minX, y: key.maxY))
+        neck.addLine(to: CGPoint(x: key.maxX - r, y: key.maxY))
+        neck.addQuadCurve(to: CGPoint(x: key.maxX, y: key.maxY - r), control: CGPoint(x: key.maxX, y: key.maxY))
+        neck.addLine(to: CGPoint(x: key.maxX, y: key.minY + r))
+        neck.addCurve(to: CGPoint(x: bubble.maxX - 2, y: bubble.maxY - r),
+                      control1: CGPoint(x: key.maxX, y: key.minY),
+                      control2: CGPoint(x: bubble.maxX - 2, y: bubble.maxY + 4))
+        neck.closeSubpath()
+        path.addPath(neck)
+        return path
+    }
+}
+
+private struct AccentMenuView: View {
+    let menu: KeyboardModel.AccentMenu
+    let palette: KeyPalette
     let width: CGFloat
-    var highlighted = false
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Group {
-                if let systemImage { Image(systemName: systemImage).font(.system(size: 17)) }
-                else { Text(label).font(.system(size: 16)) }
+        let frame = AccentGeometry.menuFrame(menu, width: width)
+        let options = AccentGeometry.optionFrames(menu, width: width)
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: KeyboardMetrics.cornerRadius + 2, style: .continuous)
+                .fill(palette.key)
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
+            ForEach(menu.options.indices, id: \.self) { i in
+                let selected = i == menu.selected
+                Text(menu.options[i])
+                    .font(.system(size: 26))
+                    .foregroundStyle(selected ? .white : palette.text)
+                    .frame(width: options[i].width, height: options[i].height)
+                    .background(selected ? RoundedRectangle(cornerRadius: 7, style: .continuous).fill(palette.accent) : nil)
+                    .offset(x: options[i].minX, y: options[i].minY)
             }
         }
-        .buttonStyle(PressStyle(function: !highlighted))
-        .frame(width: width)
-    }
-}
-
-/// Deletes once on tap and repeats while held.
-private struct DeleteKey: View {
-    let action: () -> Void
-    @State private var timer: Timer?
-
-    var body: some View {
-        Image(systemName: "delete.left").font(.system(size: 17))
-            .modifier(KeyFace(function: true, pressed: timer != nil))
-            .frame(width: 44)
-            .contentShape(Rectangle())
-            .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
-                if pressing {
-                    action()
-                    timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in action() }
-                    timer?.fireDate = Date().addingTimeInterval(0.45)
-                } else {
-                    timer?.invalidate()
-                    timer = nil
-                }
-            }, perform: {})
+        .allowsHitTesting(false)
     }
 }

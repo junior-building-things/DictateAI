@@ -9,14 +9,19 @@
 /* Begin PBXBuildFile section */
 		39323AC064176737ADB0A759 /* SharedSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6875F420BD009BB194414CE1 /* SharedSettings.swift */; };
 		572AE686CD45230CBD6C3E75 /* Prompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A5306993B03334211A249F /* Prompt.swift */; };
+		7A470B5FBF6575EC0DA2CC6B /* KeyboardTouchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2EF06BE7BDF0DBE1BD5DF4D /* KeyboardTouchView.swift */; };
 		82D82FB6211BAFB58C1AEA01 /* Recorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F513F4C6F5FECDCC3CF7189 /* Recorder.swift */; };
+		83B283D9756305755EC917CA /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A6F010330D585C14CADDAA /* KeyboardLayout.swift */; };
 		8B7A61652FED9F9412136EFA /* SharedSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6875F420BD009BB194414CE1 /* SharedSettings.swift */; };
 		9DEFAF15D871087F073D513B /* Pipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B87DAABC28F9097FC23636 /* Pipeline.swift */; };
+		A5EAB48B4FED429D079D8A1D /* EmojiPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8A3069E36FA1C18498BEC4 /* EmojiPanel.swift */; };
 		AF79467D3154EACF6241FEF6 /* DictateAIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AF23F9DA7C3BDF42D9713F0 /* DictateAIApp.swift */; };
 		B48BE27EDE7556C7600D67DD /* DictateKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 42C6A29FEF7BA18E354FDE9C /* DictateKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B83C2BB72CB568EEF86F3069 /* DictationIcon@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 830A92AD6893917F78163AE7 /* DictationIcon@2x.png */; };
 		C04715BCC0EB2D4B9EAED2A9 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 794C35B92642993C57A9FDA0 /* KeyboardView.swift */; };
 		CBB00849B2F816639AA7537C /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 760E92C395ED74BDFF04F523 /* KeyboardViewController.swift */; };
 		CE00AB5F122A3ADC94C305C9 /* Pipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B87DAABC28F9097FC23636 /* Pipeline.swift */; };
+		D65C2AD7CAA6712F8656DC28 /* DictationIcon@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 486F2E7F1EF7AFFBAC8C156B /* DictationIcon@3x.png */; };
 		FF25F6B9EEAA6EDB8059A3BD /* Prompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A5306993B03334211A249F /* Prompt.swift */; };
 /* End PBXBuildFile section */
 
@@ -47,14 +52,19 @@
 /* Begin PBXFileReference section */
 		00A5306993B03334211A249F /* Prompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Prompt.swift; sourceTree = "<group>"; };
 		09B87DAABC28F9097FC23636 /* Pipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipeline.swift; sourceTree = "<group>"; };
+		28A6F010330D585C14CADDAA /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
 		42C6A29FEF7BA18E354FDE9C /* DictateKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = DictateKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		486F2E7F1EF7AFFBAC8C156B /* DictationIcon@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DictationIcon@3x.png"; sourceTree = "<group>"; };
 		6875F420BD009BB194414CE1 /* SharedSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedSettings.swift; sourceTree = "<group>"; };
 		6AF23F9DA7C3BDF42D9713F0 /* DictateAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictateAIApp.swift; sourceTree = "<group>"; };
 		760E92C395ED74BDFF04F523 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		794C35B92642993C57A9FDA0 /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
+		7F8A3069E36FA1C18498BEC4 /* EmojiPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPanel.swift; sourceTree = "<group>"; };
+		830A92AD6893917F78163AE7 /* DictationIcon@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "DictationIcon@2x.png"; sourceTree = "<group>"; };
 		8F513F4C6F5FECDCC3CF7189 /* Recorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder.swift; sourceTree = "<group>"; };
 		AE6805D1F69BD9D7F54016CF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B60A55DBB16775A2835620A6 /* DictateKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DictateKeyboard.entitlements; sourceTree = "<group>"; };
+		C2EF06BE7BDF0DBE1BD5DF4D /* KeyboardTouchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardTouchView.swift; sourceTree = "<group>"; };
 		CEB5B6E824DB54DF082B312B /* DictateAI.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DictateAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7E3ECDB9C1D60AD81EF9140 /* DictateAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DictateAI.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -64,7 +74,12 @@
 			isa = PBXGroup;
 			children = (
 				B60A55DBB16775A2835620A6 /* DictateKeyboard.entitlements */,
+				830A92AD6893917F78163AE7 /* DictationIcon@2x.png */,
+				486F2E7F1EF7AFFBAC8C156B /* DictationIcon@3x.png */,
+				7F8A3069E36FA1C18498BEC4 /* EmojiPanel.swift */,
 				AE6805D1F69BD9D7F54016CF /* Info.plist */,
+				28A6F010330D585C14CADDAA /* KeyboardLayout.swift */,
+				C2EF06BE7BDF0DBE1BD5DF4D /* KeyboardTouchView.swift */,
 				794C35B92642993C57A9FDA0 /* KeyboardView.swift */,
 				760E92C395ED74BDFF04F523 /* KeyboardViewController.swift */,
 				8F513F4C6F5FECDCC3CF7189 /* Recorder.swift */,
@@ -137,6 +152,7 @@
 			buildConfigurationList = 9F1CBF22E3C0EA672B0674BB /* Build configuration list for PBXNativeTarget "DictateKeyboard" */;
 			buildPhases = (
 				9754E37B6787063A7256D952 /* Sources */,
+				1F086ABD0017427C825A4E67 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -188,6 +204,18 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		1F086ABD0017427C825A4E67 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B83C2BB72CB568EEF86F3069 /* DictationIcon@2x.png in Resources */,
+				D65C2AD7CAA6712F8656DC28 /* DictationIcon@3x.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		7058C0730160D5F71B49C78F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -204,6 +232,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5EAB48B4FED429D079D8A1D /* EmojiPanel.swift in Sources */,
+				83B283D9756305755EC917CA /* KeyboardLayout.swift in Sources */,
+				7A470B5FBF6575EC0DA2CC6B /* KeyboardTouchView.swift in Sources */,
 				C04715BCC0EB2D4B9EAED2A9 /* KeyboardView.swift in Sources */,
 				CBB00849B2F816639AA7537C /* KeyboardViewController.swift in Sources */,
 				CE00AB5F122A3ADC94C305C9 /* Pipeline.swift in Sources */,

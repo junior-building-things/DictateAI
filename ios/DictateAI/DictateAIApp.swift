@@ -17,6 +17,7 @@ struct SetupView: View {
     @State private var geminiKey = SharedSettings.geminiKey
     @State private var language = SharedSettings.language
     @State private var tryIt = ""
+    @State private var keyHaptics = SharedSettings.keyHaptics
 
     private let languages = [("en", "English"), ("sv", "Svenska"), ("fi", "Suomi"), ("zh", "中文")]
 
@@ -71,6 +72,8 @@ struct SetupView: View {
                         ForEach(languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
                     .onChange(of: language) { _, value in SharedSettings.language = value }
+                    Toggle("Haptic feedback on keys", isOn: $keyHaptics)
+                        .onChange(of: keyHaptics) { _, value in SharedSettings.keyHaptics = value }
                 } header: {
                     Text("3. API keys")
                 } footer: {

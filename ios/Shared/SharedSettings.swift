@@ -21,6 +21,13 @@ enum SharedSettings {
         set { defaults.set(newValue, forKey: "language") }
     }
 
+    /// Light haptic on each key press (needs Full Access). Off by default,
+    /// like the system keyboard's Haptic Feedback setting.
+    static var keyHaptics: Bool {
+        get { defaults.bool(forKey: "key_haptics") }
+        set { defaults.set(newValue, forKey: "key_haptics") }
+    }
+
     static var groqKey: String {
         get { Keychain.read(groqKeyName) ?? "" }
         set { Keychain.write(groqKeyName, newValue) }
