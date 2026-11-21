@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { Dropdown } from "../../components/Dropdown";
 import { useI18n } from "../../lib/i18n";
 import { useAppStore } from "../../lib/store";
@@ -67,7 +68,7 @@ function resolveTheme(mode: ThemeMode): "dark" | "light" {
 const LayoutInner = () => {
   const location = useLocation();
   const { t } = useI18n();
-  const { hotkeySettings } = useAppStore();
+  const { hotkeySettings, updates } = useAppStore();
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     const stored = localStorage.getItem("dictateai.theme");
@@ -214,6 +215,29 @@ const LayoutInner = () => {
               </NavLink>
             ))}
           </nav>
+
+          {/* Version + update status, pinned bottom-left */}
+          <div className="relative mt-auto flex flex-col gap-1.5 px-2 pt-3">
+            {updates.status === "downloading" && updates.availableVersion && (
+              <div className="text-[11.5px]" style={{ color: "var(--text-muted)" }}>
+                {t("updateDownloadingLabel", { version: updates.availableVersion })}
+                {updates.downloadProgress !== null && ` · ${updates.downloadProgress}%`}
+              </div>
+            )}
+            {updates.status === "ready" && updates.availableVersion && (
+              <div className="flex items-center justify-between gap-2 text-[11.5px]" style={{ color: "var(--text)" }}>
+                <span>{t("updateReadyLabel", { version: updates.availableVersion })}</span>
+                <button type="button" className="btn btn-ai" onClick={() => void relaunch()}>
+                  {t("restartNow")}
+                </button>
+              </div>
+            )}
+            {updates.currentVersion && (
+              <div className="mono-label" style={{ fontSize: "9.5px" }}>
+                v{updates.currentVersion}
+              </div>
+            )}
+          </div>
         </aside>
 
         {/* ============ Main ============ */}

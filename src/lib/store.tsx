@@ -138,7 +138,8 @@ const defaultHotkeySettings: HotkeyState = {
 };
 
 const defaultUpdateState: UpdateState = {
-  currentVersion: "1.0.7",
+  // Filled from the app bundle on launch; empty hides the version until then.
+  currentVersion: "",
   availableVersion: null,
   status: "checking",
   downloadProgress: null,
