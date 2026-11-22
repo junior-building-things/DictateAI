@@ -43,16 +43,6 @@
     });
   }
 
-  // ---- Pointer-following glow in the hero stage --------------------------
-  var heroStage = document.getElementById("heroStage");
-  if (heroStage && !reduce) {
-    heroStage.addEventListener("pointermove", function (e) {
-      var r = heroStage.getBoundingClientRect();
-      heroStage.style.setProperty("--gx", (((e.clientX - r.left) / r.width) * 100).toFixed(1) + "%");
-      heroStage.style.setProperty("--gy", (((e.clientY - r.top) / r.height) * 100).toFixed(1) + "%");
-    });
-  }
-
   // ---- 3D pointer-tilt on mockup cards -----------------------------------
   if (!reduce) {
     document.querySelectorAll(".tilt").forEach(function (card) {
