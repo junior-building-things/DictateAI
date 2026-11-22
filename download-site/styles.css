@@ -301,8 +301,34 @@ section {
   animation: pulse 1.4s ease-in-out infinite;
 }
 .pill-label {
+  min-width: 6.5em;
   font-size: 15px;
   color: var(--text);
+}
+.heard-text {
+  width: 100%;
+  max-width: 360px;
+  min-height: 2lh;
+  margin: -6px 0 0;
+  text-align: center;
+  font-size: 15px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+/* Once the mic is done the bars rest; the dot turns blue, then green. */
+.hero-stage.rewriting .eq span,
+.hero-stage.pasted .eq span {
+  animation-play-state: paused;
+  opacity: 0.4;
+}
+.hero-stage.rewriting .pill-dot {
+  background: var(--ai);
+  box-shadow: 0 0 10px var(--ai-glow);
+}
+.hero-stage.pasted .pill-dot {
+  background: oklch(0.78 0.15 150);
+  box-shadow: 0 0 10px oklch(0.78 0.15 150 / 0.8);
+  animation: none;
 }
 .eq {
   display: flex;
@@ -348,6 +374,8 @@ section {
   box-shadow: 0 0 8px oklch(0.78 0.15 150 / 0.8);
 }
 .paste-text {
+  min-height: 2lh;
+  transition: opacity 0.3s ease;
   margin: 0;
   font-size: 15px;
   color: var(--text);
@@ -562,50 +590,10 @@ section {
   border-color: var(--hairline-strong);
   transform: translateY(-2px);
 }
-.provider-chip img {
+.provider-chip svg {
   width: 20px;
   height: 20px;
-  object-fit: contain;
-}
-
-/* ---- Steps --------------------------------------------------------------- */
-.steps h2 {
-  font-size: clamp(28px, 3.6vw, 40px);
-  margin-bottom: 50px;
-}
-.step-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 22px;
-}
-.step {
-  padding: 30px 26px;
-  border-radius: var(--r-lg);
-  background: var(--bg-elev-1);
-  border: 1px solid var(--hairline);
-}
-.step-num {
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-family: var(--font-mono);
-  font-size: 17px;
-  color: oklch(0.86 0.1 var(--ai-h));
-  background: var(--ai-soft);
-  border: 1px solid oklch(0.65 0.17 var(--ai-h) / 0.5);
-  margin-bottom: 18px;
-}
-.step h3 {
-  font-size: 19px;
-  margin-bottom: 8px;
-}
-.step p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 15px;
+  flex: none;
 }
 
 /* ---- Download ------------------------------------------------------------ */
@@ -790,16 +778,18 @@ section {
 }
 
 /* staggered reveals for the grid sections */
-.principles .principle:nth-child(2),
-.step-row .step:nth-child(2) {
+.principles .principle:nth-child(2) {
   transition-delay: 0.08s;
 }
-.principles .principle:nth-child(3),
-.step-row .step:nth-child(3) {
+.principles .principle:nth-child(3) {
   transition-delay: 0.16s;
 }
 .principles .principle:nth-child(4) {
   transition-delay: 0.24s;
+}
+
+.paste-text.swapping {
+  opacity: 0;
 }
 
 /* ---- Responsive ---------------------------------------------------------- */
@@ -838,9 +828,6 @@ section {
   .checks {
     display: inline-flex;
     text-align: left;
-  }
-  .step-row {
-    grid-template-columns: 1fr;
   }
 }
 
