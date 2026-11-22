@@ -60,38 +60,6 @@
     });
   }
 
-  // ---- "Try it" live dictation demo (types the transcript) ---------------
-  var tryBtn = document.getElementById("tryBtn");
-  var demoOut = document.getElementById("demoOut");
-  var demo = tryBtn ? tryBtn.closest(".hotkey-demo") : null;
-  var typing = false;
-  if (tryBtn && demoOut) {
-    tryBtn.addEventListener("click", function () {
-      if (typing) return;
-      typing = true;
-      var text = demoOut.getAttribute("data-text") || demoOut.textContent;
-      demoOut.textContent = "";
-      demoOut.classList.add("typing");
-      if (demo) demo.classList.add("recording");
-      tryBtn.disabled = true;
-      var i = 0;
-      var step = function () {
-        demoOut.textContent = text.slice(0, i + 1);
-        i++;
-        if (i < text.length) {
-          setTimeout(step, 42);
-        } else {
-          demoOut.classList.remove("typing");
-          if (demo) demo.classList.remove("recording");
-          tryBtn.disabled = false;
-          typing = false;
-        }
-      };
-      // brief "listening" beat before the words land
-      setTimeout(step, 380);
-    });
-  }
-
   // ---- "Clean it up" before/after reveal ---------------------------------
   var cleanBtn = document.getElementById("cleanBtn");
   var rewriteCard = document.getElementById("rewriteCard");
