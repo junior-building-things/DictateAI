@@ -166,6 +166,18 @@ export function Dropdown<V extends string>({
  */
 export function ProviderLogo({ provider }: { provider: string }) {
   const asset = PROVIDER_ASSET[provider];
+  if (asset && MONO_PROVIDERS.has(provider)) {
+    // Black marks vanish on the dark theme: use the file's shape as a mask
+    // and paint it in the theme's text color.
+    const mask = `url(${asset}) center / contain no-repeat`;
+    return (
+      <span
+        className="provider-logo provider-logo-mono"
+        style={{ WebkitMask: mask, mask }}
+        aria-hidden="true"
+      />
+    );
+  }
   if (asset) {
     return (
       <img
@@ -189,11 +201,14 @@ const PROVIDER_ASSET: Record<string, string> = {
   OpenAI: "/provider-icons/openai_logo.svg",
   Google: "/provider-icons/gemini.png",
   Apple: "/provider-icons/apple.svg",
-  Deepgram: "/provider-icons/deepgram.png",
+  Deepgram: "/provider-icons/deepgram.svg",
   Groq: "/provider-icons/groq.png",
   NVIDIA: "/provider-icons/nvidia.png",
   Alibaba: "/provider-icons/qwen.png",
 };
+
+/** Single-color (black) marks, drawn in the text color so they show on both themes. */
+const MONO_PROVIDERS = new Set(["OpenAI", "Apple", "Deepgram"]);
 
 // Fallback colored chip with brand glyph — used for providers that don't
 // have an asset shipped. Empty by default; every shipped provider has an

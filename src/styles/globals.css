@@ -1599,6 +1599,10 @@ select.input-control option {
   letter-spacing: -0.02em;
   text-transform: uppercase;
 }
+.provider-logo-mono {
+  border-radius: 0;
+  background: var(--text);
+}
 
 /* Disabled textarea state for custom-prompt toggle */
 .s-textarea:disabled {
