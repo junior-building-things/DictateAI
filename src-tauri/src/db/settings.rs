@@ -26,7 +26,7 @@ const SECRET_KEYS: &[&str] = &[
 
 const KEYCHAIN_SERVICE: &str = "com.dictateai.app";
 
-fn is_secret(key: &str) -> bool {
+pub(crate) fn is_secret(key: &str) -> bool {
     SECRET_KEYS.contains(&key)
 }
 

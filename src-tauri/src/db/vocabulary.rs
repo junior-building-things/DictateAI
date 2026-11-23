@@ -38,6 +38,10 @@ pub fn get_all(conn: &Connection) -> AppResult<Vec<VocabularyTerm>> {
     Ok(terms)
 }
 
+pub fn get_by_id(conn: &Connection, id: i64) -> AppResult<Option<VocabularyTerm>> {
+    Ok(get_all(conn)?.into_iter().find(|t| t.id == id))
+}
+
 /// Case-insensitive existence check. Used by the "Add 'X' to
 /// vocabulary?" pill to avoid prompting for terms the user has
 /// already accepted (e.g., the user added "CTR" yesterday and the

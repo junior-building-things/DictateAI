@@ -35,7 +35,14 @@ pub fn get_setting(state: State<AppState>, key: String) -> Result<String, String
 #[tauri::command]
 pub fn save_setting(state: State<AppState>, key: String, value: String) -> Result<(), String> {
     let db = state.db.lock().unwrap();
-    settings::set(&db, &key, &value).map_err(|e| e.to_string())
+    // Only real changes go to iCloud: the front end re-saves unchanged values
+    // on load, and pushing those from a fresh Mac would overwrite the synced ones.
+    let changed = settings::get(&db, &key).map_or(true, |previous| previous != value);
+    settings::set(&db, &key, &value).map_err(|e| e.to_string())?;
+    if changed {
+        crate::icloud::push_setting(&key, &value);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -72,7 +79,9 @@ pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> 
             app.state::<crate::hotkey::right_option::RightOptionMonitor>()
                 .start(app.clone());
             let db = state.db.lock().unwrap();
-            return settings::set(&db, "hotkey", &hotkey).map_err(|e| e.to_string());
+            settings::set(&db, "hotkey", &hotkey).map_err(|e| e.to_string())?;
+            crate::icloud::push_setting("hotkey", &hotkey);
+            return Ok(());
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -87,7 +96,9 @@ pub fn update_hotkey(app: AppHandle, state: State<AppState>, hotkey: String) -> 
     }
 
     let db = state.db.lock().unwrap();
-    settings::set(&db, "hotkey", &hotkey).map_err(|e| e.to_string())
+    settings::set(&db, "hotkey", &hotkey).map_err(|e| e.to_string())?;
+    crate::icloud::push_setting("hotkey", &hotkey);
+    Ok(())
 }
 
 /// Re-activate the hotkey still stored in the DB after a failed swap, so the
@@ -184,14 +195,18 @@ pub fn add_vocabulary_term(
     category: String,
 ) -> Result<i64, String> {
     let db = state.db.lock().unwrap();
-    vocabulary::add_term(
+    let id = vocabulary::add_term(
         &db,
         &term,
         phonetic.as_deref(),
         definition.as_deref(),
         &category,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if let Some(added) = vocabulary::get_by_id(&db, id).map_err(|e| e.to_string())? {
+        crate::icloud::push_term(&added);
+    }
+    Ok(id)
 }
 
 #[tauri::command]
@@ -204,6 +219,7 @@ pub fn update_vocabulary_term(
     category: String,
 ) -> Result<(), String> {
     let db = state.db.lock().unwrap();
+    let previous = vocabulary::get_by_id(&db, id).map_err(|e| e.to_string())?;
     vocabulary::update_term(
         &db,
         id,
@@ -212,13 +228,25 @@ pub fn update_vocabulary_term(
         definition.as_deref(),
         &category,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if let Some(previous) = previous.filter(|p| !p.term.trim().eq_ignore_ascii_case(term.trim())) {
+        crate::icloud::remove_term(&previous.term);
+    }
+    if let Some(updated) = vocabulary::get_by_id(&db, id).map_err(|e| e.to_string())? {
+        crate::icloud::push_term(&updated);
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn delete_vocabulary_term(state: State<AppState>, id: i64) -> Result<(), String> {
     let db = state.db.lock().unwrap();
-    vocabulary::delete_term(&db, id).map_err(|e| e.to_string())
+    let deleted = vocabulary::get_by_id(&db, id).map_err(|e| e.to_string())?;
+    vocabulary::delete_term(&db, id).map_err(|e| e.to_string())?;
+    if let Some(deleted) = deleted {
+        crate::icloud::remove_term(&deleted.term);
+    }
+    Ok(())
 }
 
 // --- Model Management ---

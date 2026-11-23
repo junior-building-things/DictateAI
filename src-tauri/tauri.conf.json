@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "DictateAI",
-  "version": "1.0.28",
+  "version": "1.0.30",
   "identifier": "com.dictateai.app",
   "build": {
     "frontendDist": "../dist",
@@ -51,6 +51,9 @@
     ],
     "macOS": {
       "entitlements": "Entitlements.plist",
+      "files": {
+        "embedded.provisionprofile": "embedded.provisionprofile"
+      },
       "infoPlist": "Info.plist",
       "minimumSystemVersion": "10.15"
     },

@@ -50,6 +50,12 @@ The canonical model catalog (labels, settings keys, latency/accuracy/cost metric
 - **Frontend ↔ backend is Tauri commands + events.** Commands are registered in `lib.rs`'s `invoke_handler!` and called from [src/lib/commands.ts](src/lib/commands.ts). The backend emits events (`state-changed`, `transcription-complete`, `pipeline-error`, `dictation-edited`) the UI listens for; `src/lib/useDictation.ts` and `src/lib/store.tsx` hold the React-side state.
 - **One window.** The settings/history window (routed React app under `src/app/`), plus a tray menu (`tray.rs`). The old NSPanel overlay window was removed once nothing rendered in it; recover it from history if floating UI is ever wanted again.
 - **Secrets live in the Keychain, not SQLite.** `db/settings.rs` routes the nine `SECRET_KEYS` (API keys and tokens) to the macOS Keychain, cached once per key per run. Everything else is a plain settings row.
+- **Vocabulary and settings sync through iCloud** (`icloud.rs`, `NSUbiquitousKeyValueStore`): one key per item
+  (`s:<setting>`, `v:<lowercased term>`), pushed from the commands in `commands.rs`, pulled at launch and on
+  change notifications. History and API keys never sync. It needs the `ubiquity-kvstore-identifier`
+  entitlement, which only works with `src-tauri/embedded.provisionprofile` (Developer ID profile for
+  `com.dictateai.app`, expires 2044) embedded — **ship one without the other and macOS refuses to launch
+  the app.**
 - **The microphone is released between dictations.** `audio/capture.rs` drops the cpal stream when idle — holding it keeps a `PreventUserIdleSystemSleep` assertion up and stops the Mac sleeping.
 
 ## Source Layout

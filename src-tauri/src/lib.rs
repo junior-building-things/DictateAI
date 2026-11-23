@@ -5,6 +5,7 @@ mod commands;
 mod db;
 mod error;
 mod hotkey;
+mod icloud;
 mod paste;
 mod pipeline;
 mod pricing;
@@ -218,6 +219,9 @@ pub fn run() {
                     log::error!("Failed to register hotkey '{}': {}", hotkey_str, e);
                 }
             }
+
+            // After the hotkey is registered, so a synced hotkey can replace it.
+            icloud::start(&handle);
 
             // Setup system tray
             tray::setup(app.handle())?;

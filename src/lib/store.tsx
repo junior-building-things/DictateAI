@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
 import { errorMessage } from "./utils";
 import {
@@ -12,6 +11,7 @@ import {
   setHistoryFavorite,
   updateHistoryEntry,
   updateHotkey,
+  onICloudSynced,
 } from "./commands";
 import {
   DEFAULT_REWRITE_PROVIDER,
@@ -207,8 +207,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     void load();
+    const stopSyncListener = onICloudSynced(() => void load());
     return () => {
       active = false;
+      stopSyncListener();
     };
   }, []);
 
@@ -257,7 +259,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: "downloading",
           downloadProgress: 0,
         });
-        toast.info(tRef.current("updateDownloadingToast", { version: update.version }));
 
         let totalBytes = 0;
         let downloadedBytes = 0;
@@ -314,13 +315,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           downloadProgress: 100,
         });
         installed = true;
-        toast.info(tRef.current("updateReadyOnNextLaunchToast", { version: update.version }), {
-          duration: Infinity,
-          action: {
-            label: tRef.current("restartNow"),
-            onClick: () => void relaunch(),
-          },
-        });
         await update.close().catch(() => undefined);
       } catch (error) {
         if (!active) {

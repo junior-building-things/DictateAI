@@ -10,5 +10,13 @@
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <!-- iCloud key-value sync (icloud.rs). These need embedded.provisionprofile:
+         without it macOS refuses to launch the app. -->
+    <key>com.apple.application-identifier</key>
+    <string>Q2V7263T69.com.dictateai.app</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>Q2V7263T69</string>
+    <key>com.apple.developer.ubiquity-kvstore-identifier</key>
+    <string>Q2V7263T69.com.dictateai.app</string>
 </dict>
 </plist>

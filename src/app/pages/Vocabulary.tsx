@@ -6,6 +6,7 @@ import {
   addVocabularyTerm,
   deleteVocabularyTerm,
   getVocabulary,
+  onICloudSynced,
   updateVocabularyTerm,
 } from "../../lib/commands";
 import { useI18n } from "../../lib/i18n";
@@ -29,6 +30,7 @@ export const Vocabulary = () => {
 
   useEffect(() => {
     void loadTerms();
+    return onICloudSynced(() => void loadTerms());
   }, []);
 
   // Auto-focus the term input each time the modal opens (both for "add"

@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { HistoryEntry, ModelInfo, VocabularyTerm } from "./types";
 
@@ -152,3 +153,10 @@ export const startManualRecording = () =>
 
 export const stopManualRecording = () =>
   invoke<void>("stop_manual_recording");
+
+/** Runs `handler` when iCloud brings in settings or vocabulary from another
+ * Mac. Returns the unsubscribe function, for use as an effect cleanup. */
+export function onICloudSynced(handler: () => void): () => void {
+  const unlisten = listen("icloud-synced", handler);
+  return () => void unlisten.then((stop) => stop());
+}

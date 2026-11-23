@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { getSetting, saveSetting } from "./commands";
+import { getSetting, onICloudSynced, saveSetting } from "./commands";
 
 export type LanguageCode = "en" | "zh" | "sv" | "fi";
 
@@ -23,7 +23,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "Dictation and Intelligent Rewriting",
     developedBy: "Developed by Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "Settings",
     tabTranscription: "Transcription",
     tabRewrite: "Model Management",
@@ -238,11 +238,8 @@ const translations = {
     updateAvailableDescription: "Version {{version}} will be installed the next time you open DictateAI.",
     updatesUnavailableDescription: "Automatic updates are unavailable right now.",
     downloadingUpdateProgress: "Downloading update... {{progress}}%",
-    updateDownloadingToast: "Downloading update {{version}} in the background.",
-    updateReadyOnNextLaunchToast: "Update {{version}} will be installed next time you open DictateAI.",
-    restartNow: "Restart now",
     updateDownloadingLabel: "Downloading v{{version}}",
-    updateReadyLabel: "v{{version}} ready to install",
+    updateReadyLabel: "Restart to update to v{{version}}",
     unableToCheckForUpdates: "Unable to check for updates.",
     generalLabel: "General",
     permissionsTitle: "Permissions",
@@ -326,7 +323,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "Transcripcion y reescritura de voz",
     developedBy: "Desarrollado por Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "Ajustes",
     tabTranscription: "Transcripcion",
     tabRewrite: "Gestión de Modelos",
@@ -412,7 +409,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "Transcription et reecriture vocale",
     developedBy: "Developpe par Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "Paramètres",
     tabTranscription: "Transcription",
     tabRewrite: "Gestion des Modèles",
@@ -498,7 +495,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "Sprachtranskription und Umschreiben",
     developedBy: "Entwickelt von Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "Einstellungen",
     tabTranscription: "Transkription",
     tabRewrite: "Modellverwaltung",
@@ -584,7 +581,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "音声の文字起こしと書き換え",
     developedBy: "Developed by Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "設定",
     tabTranscription: "文字起こし",
     tabRewrite: "モデル管理",
@@ -670,7 +667,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "语音转写与改写",
     developedBy: "Developed by Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "设置",
     tabTranscription: "转写",
     tabRewrite: "模型管理",
@@ -946,7 +943,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "Taltranskribering och omskrivning",
     developedBy: "Utvecklad av Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "Inställningar",
     tabTranscription: "Transkribering",
     tabRewrite: "Modellhantering",
@@ -1226,7 +1223,7 @@ const translations = {
     appTitle: "DictateAI",
     appSubtitle: "Puheen litterointi ja uudelleenkirjoitus",
     developedBy: "Kehittänyt Thomas",
-    version: "v1.0.28",
+    version: "v1.0.30",
     tabGeneral: "Asetukset",
     tabTranscription: "Litterointi",
     tabRewrite: "Mallien Hallinta",
@@ -1533,15 +1530,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<LanguageCode>("en");
 
   useEffect(() => {
-    getSetting("interface_language")
-      .then((value) => {
-        if (value in translationAlias) {
-          setLanguageState(value as LanguageCode);
-        }
-      })
-      .catch(() => {
-        setLanguageState("en");
-      });
+    const load = () =>
+      getSetting("interface_language")
+        .then((value) => {
+          if (value in translationAlias) {
+            setLanguageState(value as LanguageCode);
+          }
+        })
+        .catch(() => {
+          setLanguageState("en");
+        });
+    void load();
+    return onICloudSynced(() => void load());
   }, []);
 
   const setLanguage = async (next: LanguageCode) => {

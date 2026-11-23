@@ -1,7 +1,7 @@
 {
   "name": "dictateai",
   "private": true,
-  "version": "1.0.28",
+  "version": "1.0.30",
   "type": "module",
   "scripts": {
     "dev": "vite",

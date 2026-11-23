@@ -217,23 +217,24 @@ const LayoutInner = () => {
           </nav>
 
           {/* Version + update status, pinned bottom-left */}
-          <div className="relative mt-auto flex flex-col gap-1.5 px-2 pt-3">
+          <div className="relative mt-auto flex flex-col gap-2 px-2 pt-3">
             {updates.status === "downloading" && updates.availableVersion && (
-              <div className="text-[11.5px]" style={{ color: "var(--text-muted)" }}>
+              <div className="btn btn-ai pointer-events-none w-full justify-center whitespace-nowrap tabular-nums">
                 {t("updateDownloadingLabel", { version: updates.availableVersion })}
                 {updates.downloadProgress !== null && ` · ${updates.downloadProgress}%`}
               </div>
             )}
             {updates.status === "ready" && updates.availableVersion && (
-              <div className="flex items-center justify-between gap-2 text-[11.5px]" style={{ color: "var(--text)" }}>
-                <span>{t("updateReadyLabel", { version: updates.availableVersion })}</span>
-                <button type="button" className="btn btn-ai" onClick={() => void relaunch()}>
-                  {t("restartNow")}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn btn-ai w-full justify-center whitespace-nowrap"
+                onClick={() => void relaunch()}
+              >
+                {t("updateReadyLabel", { version: updates.availableVersion })}
+              </button>
             )}
             {updates.currentVersion && (
-              <div className="mono-label" style={{ fontSize: "9.5px" }}>
+              <div className="mono-label" style={{ fontSize: "9.5px", textTransform: "none" }}>
                 v{updates.currentVersion}
               </div>
             )}
