@@ -77,11 +77,11 @@ const LayoutInner = () => {
 
   // Listen for the backend's `dictation-edited` event — fired when the
   // post-paste AX watcher sees the user manually correct text in the
-  // destination app within ~60s of a dictation. We route the diff through
-  // the same "Add 'X' to vocabulary?" toast prompt the History inline-edit
-  // flow uses. Gated on the Auto-add vocabulary preference; if it's off,
-  // the backend already skips spawning the watcher, but we re-check here
-  // for belt-and-suspenders symmetry.
+  // destination app within ~60s of a dictation. The diff goes through the
+  // same silent auto-learn the History inline edit uses. Gated on the
+  // Auto-add vocabulary preference; if it's off, the backend already skips
+  // spawning the watcher, but we re-check here for belt-and-suspenders
+  // symmetry.
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     void listen<DictationEditedPayload>("dictation-edited", (event) => {

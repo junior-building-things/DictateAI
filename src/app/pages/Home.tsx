@@ -294,7 +294,7 @@ export const Home = () => {
           <div className="s-body">
             <div className="s-label">Auto-add vocabulary</div>
             <div className="s-desc">
-              When you edit a dictation, offer to add new proper nouns to your vocabulary.
+              When you correct a misheard word in a dictation, add it to your vocabulary automatically.
             </div>
           </div>
           <div className="s-control">
@@ -307,8 +307,8 @@ export const Home = () => {
                 void setHotkeySettings({ autoAddVocabulary: next });
                 toast.info(
                   next
-                    ? "Auto-add vocabulary on. We'll prompt for new terms after edits."
-                    : "Auto-add vocabulary off. No more prompts after edits.",
+                    ? "Auto-add vocabulary on. Corrected words are added after edits."
+                    : "Auto-add vocabulary off. Edits won't add words.",
                 );
               }}
             />
