@@ -26,11 +26,14 @@ use std::ffi::c_void;
 use std::os::raw::c_int;
 
 use core_foundation::base::{CFGetTypeID, CFRelease, CFRetain, CFType, CFTypeID, CFTypeRef, TCFType};
+use core_foundation::boolean::CFBoolean;
 use core_foundation::runloop::{
     kCFRunLoopDefaultMode, CFRunLoopAddSource, CFRunLoopGetMain, CFRunLoopRemoveSource,
     CFRunLoopSourceRef,
 };
 use core_foundation::string::{CFString, CFStringRef};
+use objc::runtime::Object;
+use objc::{class, msg_send, sel, sel_impl};
 
 type AXUIElementRef = *const c_void;
 type AXObserverRef = *const c_void;
@@ -79,12 +82,18 @@ pub struct FocusedFrame {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
+    fn AXUIElementCreateApplication(pid: Pid) -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
         attribute: CFStringRef,
         value: *mut CFTypeRef,
     ) -> AXError;
     fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut Pid) -> AXError;
+    fn AXUIElementSetAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        value: CFTypeRef,
+    ) -> AXError;
 
     fn AXObserverCreate(
         application: Pid,
@@ -125,6 +134,35 @@ pub fn read_focused_text() -> Option<String> {
         let element = copy_focused_element()?;
         let element_ref = element.as_concrete_TypeRef() as AXUIElementRef;
         copy_text_from_element(element_ref)
+    }
+}
+
+/// Chromium-based apps (Lark) and Electron apps (Slack) only build their
+/// accessibility tree once an assistive app asks for it, so until then they
+/// report no focused element at all. When that's the case, ask the frontmost
+/// app for it: `AXEnhancedUserInterface` (Chromium) and
+/// `AXManualAccessibility` (Electron). It stays on until that app quits.
+/// The tree builds asynchronously — callers retry their read afterwards.
+///
+/// Returns true when it asked. A no-op (false) when something is already
+/// focused, so apps that work are left alone.
+pub fn enable_frontmost_app_accessibility() -> bool {
+    unsafe {
+        if copy_focused_element().is_some() {
+            return false;
+        }
+        let Some(app) = frontmost_app_element() else {
+            return false;
+        };
+        let app_ref = app.as_concrete_TypeRef() as AXUIElementRef;
+        let on = CFBoolean::true_value();
+        for name in ["AXEnhancedUserInterface", "AXManualAccessibility"] {
+            // Ignore the result: Lark reports an error for
+            // AXEnhancedUserInterface yet turns its tree on.
+            let attr = CFString::new(name);
+            AXUIElementSetAttributeValue(app_ref, attr.as_concrete_TypeRef(), on.as_CFTypeRef());
+        }
+        true
     }
 }
 
@@ -332,7 +370,28 @@ unsafe fn copy_focused_element() -> Option<CFType> {
     }
     let focused = copy_attribute(system_wide, "AXFocusedUIElement");
     CFRelease(system_wide as CFTypeRef);
-    focused
+    // The system-wide query fails outright (kAXErrorCannotComplete) while
+    // Lark is frontmost; asking the app itself works.
+    focused.or_else(|| {
+        let app = frontmost_app_element()?;
+        copy_attribute(app.as_concrete_TypeRef() as AXUIElementRef, "AXFocusedUIElement")
+    })
+}
+
+/// The AX element of the frontmost app, found through NSWorkspace. Runs off
+/// the main thread, so it brings its own autorelease pool.
+unsafe fn frontmost_app_element() -> Option<CFType> {
+    let pid = objc::rc::autoreleasepool(|| {
+        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
+        let app: *mut Object = msg_send![workspace, frontmostApplication];
+        if app.is_null() {
+            return None;
+        }
+        let pid: Pid = msg_send![app, processIdentifier];
+        Some(pid)
+    })?;
+    let element = AXUIElementCreateApplication(pid);
+    (!element.is_null()).then(|| CFType::wrap_under_create_rule(element as CFTypeRef))
 }
 
 unsafe fn copy_attribute(element: AXUIElementRef, name: &str) -> Option<CFType> {

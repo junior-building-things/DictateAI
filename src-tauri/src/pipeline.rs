@@ -965,7 +965,20 @@ fn spawn_edit_monitor(app: tauri::AppHandle, state: &AppState, pasted: String) {
         // baseline and fire on the paste's own value-changed notification.
         tokio::time::sleep(Duration::from_millis(250)).await;
 
-        let baseline = match crate::ax::read_focused_text() {
+        let mut baseline = crate::ax::read_focused_text();
+        if baseline.is_none() && crate::ax::enable_frontmost_app_accessibility() {
+            // Lark and other Chromium/Electron apps expose nothing until
+            // asked; their tree then takes a moment to build.
+            log::info!("Edit monitor: turned on the app's accessibility tree; retrying");
+            for _ in 0..12 {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                baseline = crate::ax::read_focused_text();
+                if baseline.is_some() {
+                    break;
+                }
+            }
+        }
+        let baseline = match baseline {
             Some(text) => text,
             None => {
                 log::info!("Edit monitor: focused element has no AX text; skipping");
