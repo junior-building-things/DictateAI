@@ -34,19 +34,20 @@ struct ChatCompletionResponse {
 #[derive(Deserialize)]
 struct ChatChoice {
     message: ChatChoiceMessage,
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ChatChoiceMessage {
-    content: String,
+    content: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
 struct TokenUsage {
     #[serde(default)]
-    prompt_tokens: u32,
+    prompt_tokens: Option<u32>,
     #[serde(default)]
-    completion_tokens: u32,
+    completion_tokens: Option<u32>,
 }
 
 pub async fn rewrite(
@@ -102,23 +103,42 @@ pub async fn rewrite(
         )));
     }
 
-    let parsed: ChatCompletionResponse = response
-        .json()
+    let body = response
+        .bytes()
         .await
+        .map_err(|error| AppError::Rewrite(format!("Failed to read Groq response: {}", error)))?;
+
+    parse_response(&body)
+}
+
+fn parse_response(body: &[u8]) -> AppResult<RewriteOutcome> {
+    // Parse separately so serde's specific error isn't hidden by reqwest.
+    let parsed: ChatCompletionResponse = serde_json::from_slice(body)
         .map_err(|error| AppError::Rewrite(format!("Failed to parse Groq response: {}", error)))?;
 
     let usage = parsed.usage.unwrap_or_default();
-    let text = parsed
+    let choice = parsed
         .choices
         .into_iter()
         .next()
-        .map(|choice| choice.message.content.trim().to_string())
-        .unwrap_or_default();
+        .ok_or_else(|| AppError::Rewrite("Groq returned no rewrite choices.".into()))?;
+    let text = choice
+        .message
+        .content
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if text.is_empty() {
+        return Err(AppError::Rewrite(format!(
+            "Groq returned no rewrite text (finish reason: {}).",
+            choice.finish_reason.as_deref().unwrap_or("unknown")
+        )));
+    }
 
     Ok(RewriteOutcome {
         text,
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
+        prompt_tokens: usage.prompt_tokens.unwrap_or_default(),
+        completion_tokens: usage.completion_tokens.unwrap_or_default(),
     })
 }
 
@@ -133,4 +153,111 @@ pub async fn validate_api_key(client: &reqwest::Client, api_key: &str) -> AppRes
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_null_token_counts() {
+        let response: ChatCompletionResponse = serde_json::from_str(
+            r#"{
+                "choices": [{"message": {"content": "Hello."}}],
+                "usage": {"prompt_tokens": null, "completion_tokens": null}
+            }"#,
+        )
+        .expect("Optional usage metadata must not discard a valid rewrite");
+        assert_eq!(response.choices.len(), 1);
+
+        let outcome = parse_response(
+            br#"{
+                "choices": [{"message": {"content": "Hello."}}],
+                "usage": {"prompt_tokens": null, "completion_tokens": null}
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.text, "Hello.");
+        assert_eq!(outcome.total_tokens(), 0);
+    }
+
+    #[test]
+    fn accepts_nullable_message_content() {
+        let response: ChatCompletionResponse = serde_json::from_str(
+            r#"{
+                "choices": [{
+                    "message": {"content": null, "reasoning": "Internal reasoning"},
+                    "finish_reason": "length"
+                }]
+            }"#,
+        )
+        .expect("A missing final answer needs a specific error, not a decoding failure");
+        assert_eq!(response.choices.len(), 1);
+    }
+
+    #[test]
+    fn parses_rewrite_and_usage_without_reasoning() {
+        let outcome = parse_response(
+            br#"{
+                "choices": [{
+                    "message": {"content": " Hello. ", "reasoning": "Internal reasoning"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 3}
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.text, "Hello.");
+        assert_eq!(outcome.prompt_tokens, 12);
+        assert_eq!(outcome.completion_tokens, 3);
+    }
+
+    #[test]
+    fn accepts_missing_or_null_usage() {
+        for body in [
+            br#"{"choices":[{"message":{"content":"OK"}}]}"#.as_slice(),
+            br#"{"choices":[{"message":{"content":"OK"}}],"usage":null}"#.as_slice(),
+            br#"{"choices":[{"message":{"content":"OK"}}],"usage":{}}"#.as_slice(),
+        ] {
+            let outcome = parse_response(body).unwrap();
+            assert_eq!(outcome.text, "OK");
+            assert_eq!(outcome.total_tokens(), 0);
+        }
+    }
+
+    #[test]
+    fn rejects_missing_or_empty_text_without_using_reasoning() {
+        for content in [serde_json::Value::Null, serde_json::json!(" ")] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "choices": [{
+                    "message": {"content": content, "reasoning": "Internal reasoning"},
+                    "finish_reason": "length"
+                }]
+            }))
+            .unwrap();
+            let error = parse_response(&body).unwrap_err().to_string();
+            assert!(error.contains("no rewrite text (finish reason: length)"));
+            assert!(!error.contains("Internal reasoning"));
+        }
+
+        let error = parse_response(br#"{"choices":[{"message":{}}]}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no rewrite text (finish reason: unknown)"));
+    }
+
+    #[test]
+    fn rejects_empty_choices() {
+        let error = parse_response(br#"{"choices":[]}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no rewrite choices"));
+    }
+
+    #[test]
+    fn reports_specific_json_error_without_response_body() {
+        let error = parse_response(br#"{"choices":[]"#).unwrap_err().to_string();
+        assert!(error.contains("EOF while parsing an object"));
+        assert!(!error.contains("{\"choices\""));
+    }
 }
