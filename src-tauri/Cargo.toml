@@ -1,6 +1,6 @@
 [package]
 name = "dictateai"
-version = "1.0.31"
+version = "1.0.32"
 description = "DictateAI desktop app"
 authors = ["you"]
 license = "MIT"
@@ -28,7 +28,7 @@ hound = "3.5"
 rubato = "0.16"
 
 # HTTP client for Gemini API
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream", "multipart", "gzip"] }
 futures-util = "0.3"
 base64 = "0.22"
 

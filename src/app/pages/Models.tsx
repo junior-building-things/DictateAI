@@ -157,7 +157,10 @@ export const Models = () => {
       model: option.label,
     })),
   );
-  const rewriteValue = `${models.rewriteProvider}::${models.rewriteModel}`;
+  const rewriteValue = `${models.rewriteProvider}::${rewriteModelLabelToSetting(
+    models.rewriteProvider,
+    models.rewriteModel,
+  )}`;
   const rewriteSelected =
     rewriteFlat.find((option) => option.value === rewriteValue) ?? rewriteFlat[0];
 

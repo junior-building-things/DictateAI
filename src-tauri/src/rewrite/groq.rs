@@ -94,6 +94,10 @@ pub async fn rewrite(
         .await
         .map_err(|error| AppError::Rewrite(format!("Groq rewrite request failed: {}", error)))?;
 
+    read_response(response).await
+}
+
+async fn read_response(response: reqwest::Response) -> AppResult<RewriteOutcome> {
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -103,12 +107,29 @@ pub async fn rewrite(
         )));
     }
 
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing")
+        .to_owned();
+    let encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("identity")
+        .to_owned();
     let body = response
         .bytes()
         .await
         .map_err(|error| AppError::Rewrite(format!("Failed to read Groq response: {}", error)))?;
 
-    parse_response(&body)
+    parse_response(&body).map_err(|error| match error {
+        AppError::Rewrite(message) => AppError::Rewrite(format!(
+            "{message} (Content-Type: {content_type}; Content-Encoding: {encoding})"
+        )),
+        other => other,
+    })
 }
 
 fn parse_response(body: &[u8]) -> AppResult<RewriteOutcome> {
@@ -158,6 +179,79 @@ pub async fn validate_api_key(client: &reqwest::Client, api_key: &str) -> AppRes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn mock_response(
+        body: Vec<u8>,
+        content_type: &str,
+        encoding: Option<&str>,
+    ) -> reqwest::Response {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let encoding = encoding
+            .map(|value| format!("Content-Encoding: {value}\r\n"))
+            .unwrap_or_default();
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\n{encoding}Content-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1024];
+            socket.read(&mut request).await.unwrap();
+            socket.write_all(headers.as_bytes()).await.unwrap();
+            socket.write_all(&body).await.unwrap();
+            socket.shutdown().await.unwrap();
+        });
+        let response = reqwest::Client::new()
+            .get(format!("http://{address}"))
+            .send()
+            .await
+            .unwrap();
+        server.await.unwrap();
+        response
+    }
+
+    #[tokio::test]
+    async fn decodes_gzip_response_before_parsing_json() {
+        let json = br#"{"choices":[{"message":{"content":"Hello."}}]}"#;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(json).unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert!(parse_response(&compressed)
+            .unwrap_err()
+            .to_string()
+            .contains("expected value at line 1 column 1"));
+        let response = mock_response(compressed, "application/json", Some("gzip")).await;
+        let outcome = read_response(response).await.unwrap();
+        assert_eq!(outcome.text, "Hello.");
+    }
+
+    #[tokio::test]
+    async fn reads_uncompressed_json_response() {
+        let response = mock_response(
+            br#"{"choices":[{"message":{"content":"Hello."}}]}"#.to_vec(),
+            "application/json",
+            None,
+        )
+        .await;
+        assert_eq!(read_response(response).await.unwrap().text, "Hello.");
+    }
+
+    #[tokio::test]
+    async fn non_json_error_includes_response_type_without_body() {
+        let response = mock_response(
+            b"<html>PRIVATE_TRANSCRIPT_AND_KEY</html>".to_vec(),
+            "text/html",
+            None,
+        )
+        .await;
+        let error = read_response(response).await.unwrap_err().to_string();
+        assert!(error.contains("Content-Type: text/html"));
+        assert!(error.contains("Content-Encoding: identity"));
+        assert!(!error.contains("PRIVATE_TRANSCRIPT_AND_KEY"));
+    }
 
     #[test]
     fn accepts_null_token_counts() {
