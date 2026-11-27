@@ -50,6 +50,9 @@ export const clearHistory = () =>
 export const getVocabulary = () =>
   invoke<VocabularyTerm[]>("get_vocabulary");
 
+export const filterUnknownVocabularyTerms = (terms: string[]) =>
+  invoke<string[]>("filter_unknown_vocabulary_terms", { terms });
+
 export const addVocabularyTerm = (
   term: string,
   phonetic: string | null,

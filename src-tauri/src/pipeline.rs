@@ -1194,7 +1194,7 @@ fn spawn_edit_monitor(app: tauri::AppHandle, state: &AppState, pasted: String) {
             // clear/send with a prior edit, so we always emit here.
             let _ = app_for_setup.emit(
                 "dictation-edited",
-                json!({ "pasted": baseline, "edited": final_text }),
+                json!({ "pasted": pasted, "edited": final_text }),
             );
         } else {
             log::info!(

@@ -1,4 +1,4 @@
-import { addVocabularyTerm, getVocabulary } from "./commands";
+import { addVocabularyTerm, filterUnknownVocabularyTerms, getVocabulary } from "./commands";
 
 /**
  * "Learn from corrections" — diff a pasted dictation against the user's
@@ -11,13 +11,9 @@ import { addVocabularyTerm, getVocabulary } from "./commands";
  *      after a paste and fires when it sees a user-edit-in-place in the
  *      destination app).
  *
- * The detection is modelled on OpenWhispr's `correctionLearner`, which asks a
- * better question than "is this word new and proper-noun-shaped?". It aligns
- * the two word sequences and looks for *substitutions* — a word that was
- * replaced by another — then keeps the pair only when the two words are close
- * enough to be a mis-hearing rather than an unrelated edit. That distinction
- * is what makes silent adding safe: we learn "Shunade" -> "Sinead", and
- * ignore "cat" -> "dog".
+ * Align the word sequences and keep spelling-similar substitutions, then
+ * reject words recognized by the system dictionary. Spelling similarity
+ * alone cannot distinguish misheard names from ordinary grammar edits.
  */
 
 const MIN_TERM_LENGTH = 3;
@@ -38,8 +34,8 @@ const REWRITE_RATIO_LIMIT = 0.5;
 
 /**
  * Everyday words a user corrects for grammar, not because the transcriber
- * misheard a name (their -> there, then -> than). Lowercase corrections to
- * these are never learned; capitalized or jargon terms still are.
+ * misheard a name (their -> there, then -> than). Reject these regardless of
+ * capitalization before consulting the system dictionary for other words.
  */
 const COMMON_WORDS = new Set(
   (
@@ -86,9 +82,9 @@ function tokenize(text: string): string[] {
  * user wrote themselves; diffing against all of it would read their existing
  * prose as corrections.
  */
-function findEditedRegion(originalText: string, fieldValue: string): string {
-  if (fieldValue.length <= originalText.length * 1.5) return fieldValue;
+function findEditedRegion(originalText: string, fieldValue: string): string | null {
   if (fieldValue.includes(originalText)) return originalText;
+  if (fieldValue.length <= originalText.length * 1.5) return fieldValue;
 
   const origWords = tokenize(originalText);
   const fieldWords = tokenize(fieldValue);
@@ -98,6 +94,7 @@ function findEditedRegion(originalText: string, fieldValue: string): string {
   // Slide a window the size of the pasted text and keep the best word overlap.
   let bestStart = 0;
   let bestScore = -1;
+  let bestMatches = 0;
   for (let i = 0; i <= fieldWords.length - windowSize; i++) {
     let matches = 0;
     for (let j = 0; j < windowSize; j++) {
@@ -106,11 +103,14 @@ function findEditedRegion(originalText: string, fieldValue: string): string {
     if (matches > bestScore) {
       bestScore = matches;
       bestStart = i;
+      bestMatches = 1;
+    } else if (matches === bestScore) {
+      bestMatches++;
     }
   }
 
-  // Too little overlap to locate our paste — fall back to the whole field.
-  if (bestScore < windowSize * 0.3) return fieldValue;
+  // Silent learning must not guess between passages or unrelated text.
+  if (bestScore < windowSize * 0.5 || bestMatches !== 1) return null;
   return fieldWords.slice(bestStart, bestStart + windowSize).join(" ");
 }
 
@@ -120,7 +120,7 @@ function findEditedRegion(originalText: string, fieldValue: string): string {
  * order — so correcting two adjacent words ("Shunade O'Conner" -> "Sinead
  * O'Connor") yields both pairs.
  */
-function findSubstitutions(origWords: string[], editedWords: string[]): [string, string][] {
+function findSubstitutions(origWords: string[], editedWords: string[]) {
   const m = origWords.length;
   const n = editedWords.length;
   const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
@@ -170,12 +170,12 @@ function findSubstitutions(origWords: string[], editedWords: string[]): [string,
     }
   }
   flush();
-  return subs;
+  return { subs, unchanged: dp[m][n] };
 }
 
 /**
- * Corrected words worth learning from an edit. Exported for testing; the
- * app calls `learnNewVocabTerms`.
+ * Candidate corrections from an edit. The app's `learnNewVocabTerms` also
+ * checks the system dictionary before adding them.
  */
 export function extractCorrections(
   originalText: string,
@@ -185,14 +185,17 @@ export function extractCorrections(
   if (!originalText || !fieldValue || originalText === fieldValue) return [];
 
   const editedRegion = findEditedRegion(originalText, fieldValue);
-  if (editedRegion === originalText) return [];
+  if (editedRegion === null || editedRegion === originalText) return [];
 
   const origWords = tokenize(originalText);
   const editedWords = tokenize(editedRegion);
   if (origWords.length === 0 || editedWords.length === 0) return [];
 
-  const subs = findSubstitutions(origWords, editedWords);
-  if (subs.length > origWords.length * REWRITE_RATIO_LIMIT) return [];
+  const { subs, unchanged } = findSubstitutions(origWords, editedWords);
+  if (
+    subs.length > origWords.length * REWRITE_RATIO_LIMIT ||
+    unchanged < origWords.length * 0.5
+  ) return [];
 
   const known = new Set(existingTerms.map((term) => term.toLowerCase()));
   const seen = new Set<string>();
@@ -203,7 +206,7 @@ export function extractCorrections(
     if (known.has(normalized) || seen.has(normalized)) continue;
     if (origWord.toLowerCase() === normalized) continue;
     if (correctedWord.length < MIN_TERM_LENGTH) continue;
-    if (correctedWord === normalized && COMMON_WORDS.has(normalized)) continue;
+    if (COMMON_WORDS.has(normalized)) continue;
 
     const distance = editDistance(origWord.toLowerCase(), normalized);
     const maxLength = Math.max(origWord.length, correctedWord.length);
@@ -233,7 +236,16 @@ export async function learnNewVocabTerms(
     return;
   }
 
-  const corrections = extractCorrections(originalText, fieldValue, existingTerms);
+  const candidates = extractCorrections(originalText, fieldValue, existingTerms);
+  if (candidates.length === 0) return;
+
+  let corrections: string[];
+  try {
+    corrections = await filterUnknownVocabularyTerms(candidates);
+  } catch (error) {
+    console.log(`[vocab-learn] dictionary unavailable, skipping: ${String(error)}`);
+    return;
+  }
   console.log(
     `[vocab-learn] baseline=${originalText.length} chars / edited=${fieldValue.length} chars / learned=${JSON.stringify(corrections)}`,
   );

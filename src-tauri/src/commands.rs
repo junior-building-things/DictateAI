@@ -187,6 +187,39 @@ pub fn get_vocabulary(state: State<AppState>) -> Result<Vec<vocabulary::Vocabula
 }
 
 #[tauri::command]
+pub async fn filter_unknown_vocabulary_terms(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    terms: Vec<String>,
+) -> Result<Vec<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let language = {
+            let db = state.db.lock().unwrap();
+            let target = settings::get(&db, "translation_language")
+                .unwrap_or_else(|_| "same".into());
+            if target == "same" {
+                settings::get(&db, "language").unwrap_or_else(|_| "en".into())
+            } else {
+                target
+            }
+        };
+        // NSSpellChecker is shared AppKit state; use it only on the main thread.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(crate::spellcheck::unknown_terms(terms, &language));
+        })
+        .map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, state, terms);
+        Err("System dictionary is unavailable on this platform".into())
+    }
+}
+
+#[tauri::command]
 pub fn add_vocabulary_term(
     state: State<AppState>,
     term: String,

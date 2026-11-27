@@ -11,6 +11,8 @@ mod pipeline;
 mod pricing;
 mod processing_mode;
 mod rewrite;
+#[cfg(target_os = "macos")]
+mod spellcheck;
 mod state;
 mod transcribe;
 mod tray;
@@ -266,6 +268,7 @@ pub fn run() {
             commands::set_history_favorite,
             commands::clear_history,
             commands::get_vocabulary,
+            commands::filter_unknown_vocabulary_terms,
             commands::add_vocabulary_term,
             commands::update_vocabulary_term,
             commands::delete_vocabulary_term,
